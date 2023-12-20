@@ -4,4 +4,4 @@
 .vscode/extensions.json
 .vscode/launch.json
 .vscode/ipch
-esp-idf-lib
+referenceLibs
