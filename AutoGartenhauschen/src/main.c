@@ -4,10 +4,14 @@
 #include <inttypes.h>
 #include <sys/time.h>
 #include <string.h>
+#include <esp_log.h>
 
 #include <hd44780.h>
 #include <pcf8574.h>
+
 #include <dht.h>
+
+#include <iot_servo.h>
 
 #define SENSOR_TYPE DHT_TYPE_AM2301
 
@@ -16,6 +20,16 @@ uint8_t dht_gpio_2 = 5;
 uint8_t dht_gpio_3 = 27;
 
 static i2c_dev_t pcf8574;
+
+#define SERVO_CH0_PIN 32
+#define SERVO_CH1_PIN 25
+#define SERVO_CH2_PIN 26
+#define SERVO_CH3_PIN 27
+#define SERVO_CH4_PIN 14
+#define SERVO_CH5_PIN 12
+#define SERVO_CH6_PIN 13
+#define SERVO_CH7_PIN 15
+
 
 static uint32_t get_time_sec()
 {
@@ -99,6 +113,43 @@ void dht_test(void *pvParameters)
     }
 }
 
+void servo_test()
+{
+
+    servo_config_t servo_cfg = {
+        .max_angle = 180,
+        .min_width_us = 500,
+        .max_width_us = 2500,
+        .freq = 50,
+        .timer_number = LEDC_TIMER_0,
+        .channels = {
+            .servo_pin = {
+                SERVO_CH1_PIN
+            },
+            .ch = {
+                LEDC_CHANNEL_1,
+            },
+        },
+        .channel_number = 1,
+    };
+
+    while (true)
+    {
+        ESP_ERROR_CHECK(iot_servo_init(LEDC_LOW_SPEED_MODE, &servo_cfg));
+        size_t i;
+        float angle_ls;
+        for (i = 0; i <= 180; i++)
+        {
+           iot_servo_write_angle(LEDC_LOW_SPEED_MODE, 1, i);  
+            vTaskDelay(50 / portTICK_PERIOD_MS);
+            iot_servo_read_angle(LEDC_LOW_SPEED_MODE, 0, &angle_ls);
+            ESP_LOGI("servo", "[%d|%.2f] ", i, angle_ls);
+        }
+
+        iot_servo_deinit(LEDC_LOW_SPEED_MODE);
+    }
+}
+
 void app_main()
 {
     /*
@@ -107,6 +158,7 @@ void app_main()
     xTaskCreate(dht_test, "dht_pin3", configMINIMAL_STACK_SIZE * 3, &dht_gpio_3, 5, NULL);
     */
 
-    ESP_ERROR_CHECK(i2cdev_init());
-    xTaskCreate(lcd_test, "lcd_test", configMINIMAL_STACK_SIZE * 5, NULL, 5, NULL);
+    // ESP_ERROR_CHECK(i2cdev_init());
+    // xTaskCreate(lcd_test, "lcd_test", configMINIMAL_STACK_SIZE * 5, NULL, 5, NULL);
+    xTaskCreate(servo_test, "servo_test", configMINIMAL_STACK_SIZE * 5, NULL, 5, NULL);
 }
