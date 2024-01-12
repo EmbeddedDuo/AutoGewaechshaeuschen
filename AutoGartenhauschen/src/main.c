@@ -8,6 +8,7 @@
 
 #include <driver/adc.h>
 #include <esp_adc_cal.h>
+
 #include <iot_servo.h>
 
 #include <hd44780.h>
@@ -21,6 +22,15 @@ uint8_t dht_gpio_2 = 5;
 uint8_t dht_gpio_3 = 27;
 
 static i2c_dev_t pcf8574;
+
+#define ADC_ATTEN_0db 0
+#define ADC_WIDTH_12Bit 3
+static const adc_unit_t unit = ADC_UNIT_1;
+#define DEFAULT_VREF 1100
+
+#define LED_GPIO 14
+
+#define SERVO_CH1_PIN 25
 
 static uint32_t get_time_sec()
 {
@@ -104,14 +114,6 @@ void dht_test(void *pvParameters)
     }
 }
 
-#define ADC_ATTEN_0db 0
-#define ADC_WIDTH_12Bit 3
-static const adc_unit_t unit = ADC_UNIT_1;
-#define DEFAULT_VREF    1100 
-
-#define LED_GPIO 14
-
-
 void photoresistor_test()
 {
 
@@ -142,73 +144,72 @@ void photoresistor_test()
 
     while (true)
     {
-         
+
         reading = adc1_get_raw(ADC1_CHANNEL_5);
         voltage = esp_adc_cal_raw_to_voltage(reading, adc_chars);
-        ESP_LOGI("photoresistor", "%lu mV", voltage );
-       
+        ESP_LOGI("photoresistor", "%lu mV", voltage);
 
-        if(voltage >= 2500  ){
-            ESP_LOGI("LED ON","");
+        if (voltage >= 2500)
+        {
+            ESP_LOGI("LED ON", "");
             gpio_set_level(LED_GPIO, 1);
-        }else if(voltage < 2500) {
-             gpio_set_level(LED_GPIO, 0);
+        }
+        else if (voltage < 2500)
+        {
+            gpio_set_level(LED_GPIO, 0);
         }
 
-         vTaskDelay(50 / portTICK_PERIOD_MS);
-
+        vTaskDelay(50 / portTICK_PERIOD_MS);
     }
 }
 
-#define SERVO_CH1_PIN 25
+void servo_test()
+{
 
-    void servo_test()
-    {
-
-        servo_config_t servo_cfg = {
-            .max_angle = 180,
-            .min_width_us = 500,
-            .max_width_us = 2500,
-            .freq = 50,
-            .timer_number = LEDC_TIMER_0,
-            .channels = {
-                .servo_pin = {
-                    SERVO_CH1_PIN},
-                .ch = {
-                    LEDC_CHANNEL_1,
-                },
+    servo_config_t servo_cfg = {
+        .max_angle = 180,
+        .min_width_us = 500,
+        .max_width_us = 2500,
+        .freq = 50,
+        .timer_number = LEDC_TIMER_0,
+        .channels = {
+            .servo_pin = {
+                SERVO_CH1_PIN},
+            .ch = {
+                LEDC_CHANNEL_1,
             },
-            .channel_number = 1,
-        };
+        },
+        .channel_number = 1,
+    };
 
-        while (true)
-        {
-            ESP_ERROR_CHECK(iot_servo_init(LEDC_LOW_SPEED_MODE, &servo_cfg));
-            size_t i;
-            float angle_ls;
-            for (i = 0; i <= 180; i++)
-            {
-                iot_servo_write_angle(LEDC_LOW_SPEED_MODE, 1, i);
-                vTaskDelay(50 / portTICK_PERIOD_MS);
-                iot_servo_read_angle(LEDC_LOW_SPEED_MODE, 0, &angle_ls);
-                ESP_LOGI("servo", "[%d|%.2f] ", i, angle_ls);
-            }
-
-            iot_servo_deinit(LEDC_LOW_SPEED_MODE);
-        }
-    }
-
-    void app_main()
+    while (true)
     {
-        /*
-        xTaskCreate(dht_test, "dht_pin1", configMINIMAL_STACK_SIZE * 3, &dht_gpio_1, 5, NULL);
-        xTaskCreate(dht_test, "dht_pin2", configMINIMAL_STACK_SIZE * 3, &dht_gpio_2, 5, NULL);
-        xTaskCreate(dht_test, "dht_pin3", configMINIMAL_STACK_SIZE * 3, &dht_gpio_3, 5, NULL);
-        */
+        ESP_ERROR_CHECK(iot_servo_init(LEDC_LOW_SPEED_MODE, &servo_cfg));
+        size_t i;
+        float angle_ls;
+        for (i = 0; i <= 180; i++)
+        {
+            iot_servo_write_angle(LEDC_LOW_SPEED_MODE, 1, i);
+            vTaskDelay(50 / portTICK_PERIOD_MS);
+            iot_servo_read_angle(LEDC_LOW_SPEED_MODE, 0, &angle_ls);
+            ESP_LOGI("servo", "[%d|%.2f] ", i, angle_ls);
+        }
 
-        // ESP_ERROR_CHECK(i2cdev_init());
-        // xTaskCreate(lcd_test, "lcd_test", configMINIMAL_STACK_SIZE * 5, NULL, 5, NULL);
-
-        // xTaskCreate(photoresistor_test, "photoresistor_test", configMINIMAL_STACK_SIZE * 5, NULL, 5, NULL);
-        // xTaskCreate(servo_test, "servo_test", configMINIMAL_STACK_SIZE * 5, NULL, 5, NULL);
+        iot_servo_deinit(LEDC_LOW_SPEED_MODE);
     }
+}
+
+void app_main()
+{
+    /*
+    xTaskCreate(dht_test, "dht_pin1", configMINIMAL_STACK_SIZE * 3, &dht_gpio_1, 5, NULL);
+    xTaskCreate(dht_test, "dht_pin2", configMINIMAL_STACK_SIZE * 3, &dht_gpio_2, 5, NULL);
+    xTaskCreate(dht_test, "dht_pin3", configMINIMAL_STACK_SIZE * 3, &dht_gpio_3, 5, NULL);
+    */
+
+    // ESP_ERROR_CHECK(i2cdev_init());
+    // xTaskCreate(lcd_test, "lcd_test", configMINIMAL_STACK_SIZE * 5, NULL, 5, NULL);
+
+    // xTaskCreate(photoresistor_test, "photoresistor_test", configMINIMAL_STACK_SIZE * 5, NULL, 5, NULL);
+    // xTaskCreate(servo_test, "servo_test", configMINIMAL_STACK_SIZE * 5, NULL, 5, NULL);
+}
