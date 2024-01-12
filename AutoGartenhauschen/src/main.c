@@ -5,9 +5,9 @@
 #include <sys/time.h>
 #include <string.h>
 #include <esp_log.h>
-
 #include <driver/adc.h>
 #include <esp_adc_cal.h>
+#include <iot_servo.h>
 
 #define ADC_ATTEN_0db 0
 #define ADC_WIDTH_12Bit 3
@@ -44,7 +44,30 @@ void photoresistor_test()
     {
         printf("Default");
     }
+}
 
+#define SERVO_CH1_PIN 25
+
+void servo_test()
+{
+
+    servo_config_t servo_cfg = {
+        .max_angle = 180,
+        .min_width_us = 500,
+        .max_width_us = 2500,
+        .freq = 50,
+        .timer_number = LEDC_TIMER_0,
+        .channels = {
+            .servo_pin = {
+                SERVO_CH1_PIN
+            },
+            .ch = {
+                LEDC_CHANNEL_1,
+            },
+        },
+        .channel_number = 1,
+    };
+  
     while (true)
     {
          
@@ -67,8 +90,6 @@ void photoresistor_test()
 
 void app_main()
 {
-
-    xTaskCreate(photoresistor_test, "photoresistor_test", configMINIMAL_STACK_SIZE * 5, NULL, 5, NULL);
-
-
+    //xTaskCreate(photoresistor_test, "photoresistor_test", configMINIMAL_STACK_SIZE * 5, NULL, 5, NULL);
+    //xTaskCreate(servo_test, "servo_test", configMINIMAL_STACK_SIZE * 5, NULL, 5, NULL);
 }
