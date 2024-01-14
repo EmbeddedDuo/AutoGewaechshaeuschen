@@ -35,6 +35,12 @@ static const adc_unit_t unit = ADC_UNIT_1;
 TaskHandle_t dht_task1 = NULL;
 QueueHandle_t temperatureQueue;
 
+struct DhtQueueMessage
+{
+    float humidity;
+    float temperature;
+};
+
 static uint32_t get_time_sec()
 {
     struct timeval tv;
@@ -104,8 +110,8 @@ void dht_task(void *pvParameters)
 
     float temperature, humidity;
     
-    float *buffer = NULL;
-    temperatureQueue = xQueueCreate(3,sizeof(buffer));
+    struct DhtQueueMessage sendMessage;
+    temperatureQueue = xQueueCreate(3,sizeof(sendMessage));
 
     if(temperatureQueue == NULL){
         ESP_LOGE("Queue","Queue couldnt be created");
@@ -115,8 +121,9 @@ void dht_task(void *pvParameters)
     {
         if (dht_read_float_data(SENSOR_TYPE, dht_gpio, &humidity, &temperature) == ESP_OK){
             printf("Humidity: %.1f%% Temp: %.1fC an Pin %" PRId8 "\n", humidity, temperature, dht_gpio);
-            buffer = &temperature;
-            if(xQueueSend(temperatureQueue,(void*)buffer, 0) == pdTRUE){
+            sendMessage.humidity = humidity;
+            sendMessage.temperature = temperature;
+            if(xQueueSend(temperatureQueue,(void*) &sendMessage,(TickType_t) 0) == pdTRUE){
                 ESP_LOGI("Queue", "temperature successfully sent");
             }
         } 
