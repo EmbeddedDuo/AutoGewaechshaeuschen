@@ -32,6 +32,9 @@ static const adc_unit_t unit = ADC_UNIT_1;
 
 #define SERVO_CH1_PIN 25
 
+TaskHandle_t dht_task1 = NULL;
+QueueHandle_t temperatureQueue;
+
 static uint32_t get_time_sec()
 {
     struct timeval tv;
@@ -90,6 +93,40 @@ void lcd_test(void *pvParameters)
         hd44780_puts(&lcd, time);
 
         vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}
+
+void dht_task(void *pvParameters)
+{   
+    uint8_t *dht_gpio_ptr = (uint8_t *)pvParameters;
+    uint8_t dht_gpio = *dht_gpio_ptr;
+    printf("Der Pin lautet: %" PRId8 "\n", dht_gpio);
+
+    float temperature, humidity;
+    
+    float *buffer = NULL;
+    temperatureQueue = xQueueCreate(3,sizeof(buffer));
+
+    if(temperatureQueue == NULL){
+        ESP_LOGE("Queue","Queue couldnt be created");
+    }
+
+    while (1)
+    {
+        if (dht_read_float_data(SENSOR_TYPE, dht_gpio, &humidity, &temperature) == ESP_OK){
+            printf("Humidity: %.1f%% Temp: %.1fC an Pin %" PRId8 "\n", humidity, temperature, dht_gpio);
+            buffer = &temperature;
+            if(xQueueSend(temperatureQueue,(void*)buffer, 0) == pdTRUE){
+                ESP_LOGI("Queue", "temperature successfully sent");
+            }
+        } 
+        else{
+            printf("Could not read data from sensor\n");
+
+        // If you read the sensor data too often, it will heat up
+        // http://www.kandrsmith.org/RJS/Misc/Hygrometers/dht_sht_how_fast.html
+        vTaskDelay(pdMS_TO_TICKS(2000));
+        }
     }
 }
 
