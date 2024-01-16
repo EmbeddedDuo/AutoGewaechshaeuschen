@@ -40,7 +40,7 @@ QueueHandle_t temperatureQueue;
 struct DhtQueueMessage
 {
     float humidity;
-    float temperature; 
+    float temperature;
 };
 
 static uint32_t get_time_sec()
@@ -85,37 +85,42 @@ void lcd_task(void *pvParameters)
     hd44780_upload_character(&lcd, 1, char_data + 8);
 
     hd44780_gotoxy(&lcd, 0, 0);
-    hd44780_puts(&lcd, "\x08 Hello world!");
+    hd44780_puts(&lcd, "Temp: ");
     hd44780_gotoxy(&lcd, 0, 1);
-    hd44780_puts(&lcd, "\x09 ");
+    hd44780_puts(&lcd, "Hum: ");
 
-    char time[16];
-
+    char temp[16];
+    char hum[16];
 
     struct DhtQueueMessage ReceiveMessage;
-        
-    
 
     while (1)
     {
-        if(xQueueReceive(temperatureQueue , &ReceiveMessage, (TickType_t) 5)== pdTRUE){
-             ESP_LOGI("Queue", "temperature successfully received");
-            printf("Humidity: %.1f  ,  Temperature: %.1f  \n", ReceiveMessage.humidity, ReceiveMessage.temperature );
+        if (xQueueReceive(temperatureQueue, &ReceiveMessage, (TickType_t)5) == pdTRUE)
+        {
+            ESP_LOGI("Queue", "temperature successfully received");
+            printf("Humidity: %.1f  ,  Temperature: %.1f  \n", ReceiveMessage.humidity, ReceiveMessage.temperature);
+
+            hd44780_gotoxy(&lcd, 7, 0);
+
+            snprintf(temp, 5, "%.1f", ReceiveMessage.temperature);
+            temp[sizeof(temp) - 1] = 0;
+
+            hd44780_puts(&lcd, temp);
+
+            hd44780_gotoxy(&lcd, 7, 1);
+
+            snprintf(hum, 5, "%.1f", ReceiveMessage.humidity);
+            hum[sizeof(hum) - 1] = 0;
+
+            hd44780_puts(&lcd, hum);
+
+            vTaskDelay(pdMS_TO_TICKS(1000));
         }
-
-        hd44780_gotoxy(&lcd, 2, 1);
-
-        snprintf(time, 7, "%" PRIu32 "  ", get_time_sec());
-        time[sizeof(time) - 1] = 0;
-
-        hd44780_puts(&lcd, time);
-
-        vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
 
-
-/* 
+/*
 void lcd_test(void *pvParameters)
 {
     hd44780_t lcd = {
@@ -162,36 +167,39 @@ void lcd_test(void *pvParameters)
 } */
 
 void dht_task(void *pvParameters)
-{   
+{
     uint8_t *dht_gpio_ptr = (uint8_t *)pvParameters;
     uint8_t dht_gpio = *dht_gpio_ptr;
     printf("Der Pin lautet: %" PRId8 "\n", dht_gpio);
 
     float temperature, humidity;
-    
-    struct DhtQueueMessage sendMessage;
-    temperatureQueue = xQueueCreate(3,sizeof(sendMessage));
 
-    if(temperatureQueue == NULL){
-        ESP_LOGE("Queue","Queue couldnt be created");
+    struct DhtQueueMessage sendMessage;
+    temperatureQueue = xQueueCreate(3, sizeof(sendMessage));
+
+    if (temperatureQueue == NULL)
+    {
+        ESP_LOGE("Queue", "Queue couldnt be created");
     }
 
     while (1)
     {
-        if (dht_read_float_data(SENSOR_TYPE, dht_gpio, &humidity, &temperature) == ESP_OK){
+        if (dht_read_float_data(SENSOR_TYPE, dht_gpio, &humidity, &temperature) == ESP_OK)
+        {
             printf("Humidity: %.1f%% Temp: %.1fC an Pin %" PRId8 "\n", humidity, temperature, dht_gpio);
             sendMessage.humidity = humidity;
             sendMessage.temperature = temperature;
-            if(xQueueSend(temperatureQueue,(void*) &sendMessage, (TickType_t) 0) == pdTRUE){
+            if (xQueueSend(temperatureQueue, (void *)&sendMessage, (TickType_t)0) == pdTRUE)
+            {
                 ESP_LOGI("Queue", "temperature successfully sent");
             }
-        } 
-        else{
+        }
+        else
+        {
             printf("Could not read data from sensor\n");
 
-        // If you read the sensor data too often, it will heat up
-        // http://www.kandrsmith.org/RJS/Misc/Hygrometers/dht_sht_how_fast.html
-        
+            // If you read the sensor data too often, it will heat up
+            // http://www.kandrsmith.org/RJS/Misc/Hygrometers/dht_sht_how_fast.html
         }
         vTaskDelay(pdMS_TO_TICKS(2000));
     }
@@ -312,8 +320,8 @@ void app_main()
     xTaskCreate(dht_test, "dht_pin3", configMINIMAL_STACK_SIZE * 3, &dht_gpio_3, 5, NULL);
     */
 
-     ESP_ERROR_CHECK(i2cdev_init());
-     xTaskCreate(lcd_task, "lcd_task", configMINIMAL_STACK_SIZE * 5, NULL, 5, NULL);
+    ESP_ERROR_CHECK(i2cdev_init());
+    xTaskCreate(lcd_task, "lcd_task", configMINIMAL_STACK_SIZE * 5, NULL, 5, NULL);
 
     // xTaskCreate(photoresistor_test, "photoresistor_test", configMINIMAL_STACK_SIZE * 5, NULL, 5, NULL);
     // xTaskCreate(servo_test, "servo_test", configMINIMAL_STACK_SIZE * 5, NULL, 5, NULL);
