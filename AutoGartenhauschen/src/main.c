@@ -35,12 +35,23 @@ static const adc_unit_t unit = ADC_UNIT_1;
 #define SERVO_CH1_PIN 25
 
 TaskHandle_t dht_task1 = NULL;
+TaskHandle_t dht_task2 = NULL;
+TaskHandle_t dht_task3 = NULL;
+
 QueueHandle_t temperatureQueue;
 
-struct DhtQueueMessage
+typedef struct DhtQueueMessage
 {
+    char *TaskName;
     float humidity;
     float temperature;
+} Message;
+
+typedef struct Messages
+{
+    Message Task1;
+    Message Task2;
+    Message Task3;
 };
 
 static uint32_t get_time_sec()
@@ -57,6 +68,13 @@ static const uint8_t char_data[] = {
 static esp_err_t write_lcd_data(const hd44780_t *lcd, uint8_t data)
 {
     return pcf8574_port_write(&pcf8574, data);
+}
+
+bool isTask(char *recievedTaskname, char *taskname){
+    if(strcmp(recievedTaskname, taskname) == 0){
+        return true;
+    }
+    return false;
 }
 
 void lcd_task(void *pvParameters)
@@ -93,30 +111,77 @@ void lcd_task(void *pvParameters)
     char hum[16];
 
     struct DhtQueueMessage ReceiveMessage;
+    struct Messages m;
+
+    float avgTemperature = 0.0;
+    float avgHumidity = 0.0;
 
     while (1)
     {
-        if (xQueueReceive(temperatureQueue, &ReceiveMessage, (TickType_t)5) == pdTRUE)
+
+        float tmpAvgTemperature = 0.0;
+        float tmpAvgHumidity = 0.0;
+
+        if (uxQueueSpacesAvailable(temperatureQueue) == 0)
         {
-            ESP_LOGI("Queue", "temperature successfully received");
-            printf("Humidity: %.1f  ,  Temperature: %.1f  \n", ReceiveMessage.humidity, ReceiveMessage.temperature);
-
-            hd44780_gotoxy(&lcd, 7, 0);
-
-            snprintf(temp, 5, "%.1f", ReceiveMessage.temperature);
-            temp[sizeof(temp) - 1] = 0;
-
-            hd44780_puts(&lcd, temp);
-
-            hd44780_gotoxy(&lcd, 7, 1);
-
-            snprintf(hum, 5, "%.1f", ReceiveMessage.humidity);
-            hum[sizeof(hum) - 1] = 0;
-
-            hd44780_puts(&lcd, hum);
-
-            vTaskDelay(pdMS_TO_TICKS(1000));
+            vTaskSuspend(dht_task1);
+            vTaskSuspend(dht_task2);
+            vTaskSuspend(dht_task3);
         }
+
+        while (uxQueueSpacesAvailable(temperatureQueue) != 3)
+        {
+            if (xQueueReceive(temperatureQueue, &ReceiveMessage, (TickType_t)5) == pdTRUE)
+            {
+                ESP_LOGI("Queue", "data successfully received from %s", ReceiveMessage.TaskName);
+                printf("Humidity: %.1f  ,  Temperature: %.1f  \n", ReceiveMessage.humidity, ReceiveMessage.temperature);
+            }
+            else
+            {
+                ESP_LOGW("Queue", "couldnt recieve Data");
+            }
+            if(isTask(ReceiveMessage.TaskName, "dht_task1")){
+                m.Task1 = ReceiveMessage;
+                tmpAvgHumidity+= ReceiveMessage.humidity;
+                tmpAvgTemperature += ReceiveMessage.temperature;
+            }else if(isTask(ReceiveMessage.TaskName, "dht_task2")){
+                m.Task2 = ReceiveMessage;
+                tmpAvgHumidity+= ReceiveMessage.humidity;
+                tmpAvgTemperature += ReceiveMessage.temperature;
+            }else{
+                m.Task3 = ReceiveMessage;
+                tmpAvgHumidity+= ReceiveMessage.humidity;
+                tmpAvgTemperature += ReceiveMessage.temperature;
+            }
+        }
+
+        tmpAvgTemperature /= 3;
+        tmpAvgHumidity /= 3;
+
+        avgHumidity = tmpAvgHumidity;
+        avgTemperature = tmpAvgTemperature;
+
+
+        hd44780_gotoxy(&lcd, 7, 0);
+
+        snprintf(temp, 6, "%.1fC", avgTemperature);
+        temp[sizeof(temp) - 1] = 0;
+
+        hd44780_puts(&lcd, temp);
+
+        hd44780_gotoxy(&lcd, 7, 1);
+
+        snprintf(hum, 6, "%.1f%%", avgHumidity);
+        hum[sizeof(hum) - 1] = 0;
+
+        hd44780_puts(&lcd, hum);
+
+
+        vTaskResume(dht_task1);
+        vTaskResume(dht_task2);
+        vTaskResume(dht_task3);
+
+        vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
 
@@ -189,9 +254,12 @@ void dht_task(void *pvParameters)
             printf("Humidity: %.1f%% Temp: %.1fC an Pin %" PRId8 "\n", humidity, temperature, dht_gpio);
             sendMessage.humidity = humidity;
             sendMessage.temperature = temperature;
+            sendMessage.TaskName = pcTaskGetName(xTaskGetCurrentTaskHandle());
             if (xQueueSend(temperatureQueue, (void *)&sendMessage, (TickType_t)0) == pdTRUE)
             {
                 ESP_LOGI("Queue", "temperature successfully sent");
+            } else{
+                ESP_LOGW("Queue", "Could not sent Data");
             }
         }
         else
@@ -325,5 +393,7 @@ void app_main()
 
     // xTaskCreate(photoresistor_test, "photoresistor_test", configMINIMAL_STACK_SIZE * 5, NULL, 5, NULL);
     // xTaskCreate(servo_test, "servo_test", configMINIMAL_STACK_SIZE * 5, NULL, 5, NULL);
-    xTaskCreate(dht_task, "dht_pin3", configMINIMAL_STACK_SIZE * 3, &dht_gpio_3, 5, &dht_task1);
+    xTaskCreate(dht_task, "dht_task1", configMINIMAL_STACK_SIZE * 3, &dht_gpio_1, 5, &dht_task1);
+    xTaskCreate(dht_task, "dht_task2", configMINIMAL_STACK_SIZE * 3, &dht_gpio_2, 5, &dht_task2);
+    xTaskCreate(dht_task, "dht_task3", configMINIMAL_STACK_SIZE * 3, &dht_gpio_3, 5, &dht_task3);
 }
