@@ -194,7 +194,7 @@ void servo_task()
 
             if (windowState)
             {
-                for (i = 90; i <= 160; i++)
+                for (i = 70; i <= 160; i++)
                 {
                     iot_servo_write_angle(LEDC_LOW_SPEED_MODE, 1, i);
                     vTaskDelay(50 / portTICK_PERIOD_MS);
@@ -204,7 +204,7 @@ void servo_task()
             else
             {
 
-                for (i = 160; i >= 90; i--)
+                for (i = 160; i >= 50; i--)
                 {
                     iot_servo_write_angle(LEDC_LOW_SPEED_MODE, 1, i);
                     vTaskDelay(50 / portTICK_PERIOD_MS);
@@ -256,7 +256,7 @@ void servo_test()
 void app_main()
 {
 
-    bool windowState = false;
+    bool windowState = true;
     windowQueue = xQueueCreate(1, sizeof(windowState));
 
     if (windowQueue == NULL)
