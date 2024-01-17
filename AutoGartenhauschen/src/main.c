@@ -32,6 +32,8 @@ static const adc_unit_t unit = ADC_UNIT_1;
 
 #define SERVO_CH1_PIN 25
 
+QueueHandle_t windowQueue;
+
 static uint32_t get_time_sec()
 {
     struct timeval tv;
@@ -163,6 +165,58 @@ void photoresistor_test()
     }
 }
 
+void servo_task()
+{
+
+    servo_config_t servo_cfg = {
+        .max_angle = 180,
+        .min_width_us = 500,
+        .max_width_us = 2500,
+        .freq = 50,
+        .timer_number = LEDC_TIMER_0,
+        .channels = {
+            .servo_pin = {
+                SERVO_CH1_PIN},
+            .ch = {
+                LEDC_CHANNEL_1,
+            },
+        },
+        .channel_number = 1,
+    };
+    ESP_ERROR_CHECK(iot_servo_init(LEDC_LOW_SPEED_MODE, &servo_cfg));
+    while (true)
+    {
+        bool windowState;
+        size_t i;
+        if (xQueueReceive(windowQueue, &windowState, (TickType_t)5) == pdTRUE)
+        {
+            ESP_LOGI("Queue2", "windowState successfully received");
+
+            if (windowState)
+            {
+                for (i = 90; i <= 160; i++)
+                {
+                    iot_servo_write_angle(LEDC_LOW_SPEED_MODE, 1, i);
+                    vTaskDelay(50 / portTICK_PERIOD_MS);
+                    ESP_LOGI("servo", "[%d] ", i);
+                }
+            }
+            else
+            {
+
+                for (i = 160; i >= 90; i--)
+                {
+                    iot_servo_write_angle(LEDC_LOW_SPEED_MODE, 1, i);
+                    vTaskDelay(50 / portTICK_PERIOD_MS);
+                    ESP_LOGI("servo", "[%d] ", i);
+                }
+            }
+        }
+    }
+}
+
+/*
+
 void servo_test()
 {
 
@@ -197,10 +251,23 @@ void servo_test()
 
         iot_servo_deinit(LEDC_LOW_SPEED_MODE);
     }
-}
+} */
 
 void app_main()
 {
+
+    bool windowState = false;
+    windowQueue = xQueueCreate(1, sizeof(windowState));
+
+    if (windowQueue == NULL)
+    {
+        ESP_LOGE("Queue2", "Queue couldnt be created");
+    }
+
+    if (xQueueSend(windowQueue, (void *)&windowState, (TickType_t)3) == pdTRUE)
+    {
+        ESP_LOGI("Queue2", "windowState successfully sent");
+    }
     /*
     xTaskCreate(dht_test, "dht_pin1", configMINIMAL_STACK_SIZE * 3, &dht_gpio_1, 5, NULL);
     xTaskCreate(dht_test, "dht_pin2", configMINIMAL_STACK_SIZE * 3, &dht_gpio_2, 5, NULL);
@@ -211,5 +278,5 @@ void app_main()
     // xTaskCreate(lcd_test, "lcd_test", configMINIMAL_STACK_SIZE * 5, NULL, 5, NULL);
 
     // xTaskCreate(photoresistor_test, "photoresistor_test", configMINIMAL_STACK_SIZE * 5, NULL, 5, NULL);
-    // xTaskCreate(servo_test, "servo_test", configMINIMAL_STACK_SIZE * 5, NULL, 5, NULL);
+    xTaskCreate(servo_task, "servo_task", configMINIMAL_STACK_SIZE * 5, NULL, 5, NULL);
 }
