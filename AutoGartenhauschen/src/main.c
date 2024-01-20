@@ -42,8 +42,6 @@ TaskHandle_t dht_task3 = NULL;
 
 QueueHandle_t temperatureQueue;
 
-QueueHandle_t windowQueue;
-
 typedef struct DhtQueueMessage
 {
     char *TaskName;
