@@ -13,8 +13,7 @@
 
 #include <iot_servo.h>
 
-#include <hd44780.h>
-#include <pcf8574.h>
+#include <hd44780Gartenhaus.h>
 #include <dht.h>
 
 #define SENSOR_TYPE DHT_TYPE_AM2301
@@ -22,8 +21,6 @@
 uint8_t dht_gpio_1 = 18;
 uint8_t dht_gpio_2 = 5;
 uint8_t dht_gpio_3 = 27;
-
-static i2c_dev_t pcf8574;
 
 #define ADC_ATTEN_0db 0
 #define ADC_WIDTH_12Bit 3
@@ -49,12 +46,7 @@ typedef struct DhtQueueMessage
     float temperature;
 } Message;
 
-typedef struct Messages
-{
-    Message Task1;
-    Message Task2;
-    Message Task3;
-};
+Message Messages [3];
 
 static uint32_t get_time_sec()
 {
@@ -67,53 +59,16 @@ static const uint8_t char_data[] = {
     0x04, 0x0e, 0x0e, 0x0e, 0x1f, 0x00, 0x04, 0x00,
     0x1f, 0x11, 0x0a, 0x04, 0x0a, 0x11, 0x1f, 0x00};
 
-static esp_err_t write_lcd_data(const hd44780_t *lcd, uint8_t data)
-{
-    return pcf8574_port_write(&pcf8574, data);
-}
-
-bool isTask(char *recievedTaskname, char *taskname){
-    if(strcmp(recievedTaskname, taskname) == 0){
-        return true;
-    }
-    return false;
-}
 
 void lcd_task(void *pvParameters)
 {
-    hd44780_t lcd = {
-        .write_cb = write_lcd_data, // use callback to send data to LCD by I2C GPIO expander
-        .font = HD44780_FONT_5X8,
-        .lines = 2,
-        .pins = {
-            .rs = 0,
-            .e = 2,
-            .d4 = 4,
-            .d5 = 5,
-            .d6 = 6,
-            .d7 = 7,
-            .bl = 3}};
-
-    memset(&pcf8574, 0, sizeof(i2c_dev_t));
-    ESP_ERROR_CHECK(pcf8574_init_desc(&pcf8574, CONFIG_EXAMPLE_I2C_ADDR, 0, CONFIG_EXAMPLE_I2C_MASTER_SDA, CONFIG_EXAMPLE_I2C_MASTER_SCL));
-
-    ESP_ERROR_CHECK(hd44780_init(&lcd));
-
+    hd44780_t lcd = initializeHD44780();
     hd44780_switch_backlight(&lcd, true);
 
     hd44780_upload_character(&lcd, 0, char_data);
     hd44780_upload_character(&lcd, 1, char_data + 8);
 
-    hd44780_gotoxy(&lcd, 0, 0);
-    hd44780_puts(&lcd, "Temp: ");
-    hd44780_gotoxy(&lcd, 0, 1);
-    hd44780_puts(&lcd, "Hum: ");
-
-    char temp[16];
-    char hum[16];
-
     struct DhtQueueMessage ReceiveMessage;
-    struct Messages m;
 
     float avgTemperature = 0.0;
     float avgHumidity = 0.0;
@@ -131,30 +86,26 @@ void lcd_task(void *pvParameters)
             vTaskSuspend(dht_task3);
         }
 
+        uint8_t counter = 0;
+
         while (uxQueueSpacesAvailable(temperatureQueue) != 3)
         {
             if (xQueueReceive(temperatureQueue, &ReceiveMessage, (TickType_t)5) == pdTRUE)
             {
                 ESP_LOGI("Queue", "data successfully received from %s", ReceiveMessage.TaskName);
                 printf("Humidity: %.1f  ,  Temperature: %.1f  \n", ReceiveMessage.humidity, ReceiveMessage.temperature);
+
+                Messages[counter] = ReceiveMessage;
+                tmpAvgHumidity+= ReceiveMessage.humidity;
+                tmpAvgTemperature += ReceiveMessage.temperature;
+
+                counter ++;
             }
             else
             {
                 ESP_LOGW("Queue", "couldnt recieve Data");
-            }
-            if(isTask(ReceiveMessage.TaskName, "dht_task1")){
-                m.Task1 = ReceiveMessage;
-                tmpAvgHumidity+= ReceiveMessage.humidity;
-                tmpAvgTemperature += ReceiveMessage.temperature;
-            }else if(isTask(ReceiveMessage.TaskName, "dht_task2")){
-                m.Task2 = ReceiveMessage;
-                tmpAvgHumidity+= ReceiveMessage.humidity;
-                tmpAvgTemperature += ReceiveMessage.temperature;
-            }else{
-                m.Task3 = ReceiveMessage;
-                tmpAvgHumidity+= ReceiveMessage.humidity;
-                tmpAvgTemperature += ReceiveMessage.temperature;
-            }
+            }   
+
         }
 
         tmpAvgTemperature /= 3;
@@ -163,21 +114,8 @@ void lcd_task(void *pvParameters)
         avgHumidity = tmpAvgHumidity;
         avgTemperature = tmpAvgTemperature;
 
-
-        hd44780_gotoxy(&lcd, 7, 0);
-
-        snprintf(temp, 6, "%.1fC", avgTemperature);
-        temp[sizeof(temp) - 1] = 0;
-
-        hd44780_puts(&lcd, temp);
-
-        hd44780_gotoxy(&lcd, 7, 1);
-
-        snprintf(hum, 6, "%.1f%%", avgHumidity);
-        hum[sizeof(hum) - 1] = 0;
-
-        hd44780_puts(&lcd, hum);
-
+        printHumidity(lcd, avgHumidity);
+        printHumidity(lcd, avgTemperature);
 
         vTaskResume(dht_task1);
         vTaskResume(dht_task2);
