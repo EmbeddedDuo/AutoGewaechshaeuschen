@@ -49,12 +49,12 @@ void printTemperature(hd44780_t lcd, float temperature){
 void printHumidity(hd44780_t lcd, float humidity){
     char temp[16];
 
-    hd44780_gotoxy(&lcd, 0, 0);
+    hd44780_gotoxy(&lcd, 0, 1);
     hd44780_puts(&lcd, "Hum: ");
 
-     hd44780_gotoxy(&lcd, 7, 0);
+    hd44780_gotoxy(&lcd, 7, 1);
 
-    snprintf(temp, 6, "%.1fC", humidity);
+    snprintf(temp, 6, "%.1f%%", humidity);
     temp[sizeof(temp) - 1] = 0;
 
     hd44780_puts(&lcd, temp);
