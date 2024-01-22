@@ -44,9 +44,9 @@ typedef struct DhtQueueMessage
     char *TaskName;
     float humidity;
     float temperature;
-} Message;
+};
 
-Message Messages [3];
+struct DhtQueueMessage dhtMessages [3];
 
 static uint32_t get_time_sec()
 {
@@ -95,7 +95,7 @@ void lcd_task(void *pvParameters)
                 ESP_LOGI("Queue", "data successfully received from %s", ReceiveMessage.TaskName);
                 printf("Humidity: %.1f  ,  Temperature: %.1f  \n", ReceiveMessage.humidity, ReceiveMessage.temperature);
 
-                Messages[counter] = ReceiveMessage;
+                dhtMessages[counter] = ReceiveMessage;
                 tmpAvgHumidity+= ReceiveMessage.humidity;
                 tmpAvgTemperature += ReceiveMessage.temperature;
 
