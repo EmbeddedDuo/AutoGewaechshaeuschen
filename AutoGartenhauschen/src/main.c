@@ -15,6 +15,7 @@
 
 #include <hd44780Gartenhaus.h>
 #include <dht.h>
+#include <wifiGartenhaus.h>
 
 #define SENSOR_TYPE DHT_TYPE_AM2301
 

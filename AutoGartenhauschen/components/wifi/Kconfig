@@ -1,0 +1,9 @@
+menu "Wifi configuration"
+    config EXAMPLE_WIFI_SSID
+        string "SSID of Network"
+        default "FRITZ!Box 7490"
+
+    config EXAMPLE_WIFI_PASSWORD
+        string "Password of Network"
+        default ""
+endmenu
