@@ -116,7 +116,7 @@ void lcd_task(void *pvParameters)
         avgTemperature = tmpAvgTemperature;
 
         printHumidity(lcd, avgHumidity);
-        printHumidity(lcd, avgTemperature);
+        printTemperatur(lcd, avgTemperature);
 
         vTaskResume(dht_task1);
         vTaskResume(dht_task2);
