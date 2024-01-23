@@ -17,13 +17,11 @@
 void init_wifi();
 
 /**
- * @brief wifi eventhanlder
+ * @brief checks if wifi is established
  * 
- * @param arg
- * @param event_base 
- * @param event_id 
- * @param event_data 
+ * @return true 
+ * @return false 
  */
-static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
+bool checkWifiEstablished();
 
 #endif

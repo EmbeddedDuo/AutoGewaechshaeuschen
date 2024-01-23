@@ -20,12 +20,6 @@
 hd44780_t initializeHD44780();
 
 /**
- * @brief callback to send data to LCD by I2C GPIO expander
- * @param
-*/
-static esp_err_t write_lcd_data(const hd44780_t *lcd, uint8_t data);
-
-/**
  * @brief writes the humidity on the second first of LCD
  * @param lcd LCD descriptor
  * @param temperature temperature value

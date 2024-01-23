@@ -192,7 +192,7 @@ void dht_task(void *pvParameters)
     {
         if (dht_read_float_data(SENSOR_TYPE, dht_gpio, &humidity, &temperature) == ESP_OK)
         {
-            printf("Humidity: %.1f%% Temp: %.1fC an Pin %" PRId8 "\n", humidity, temperature, dht_gpio);
+            ESP_LOGI("DHT","Humidity: %.1f%% Temp: %.1fC an Pin %u\n", humidity, temperature, dht_gpio);
             sendMessage.humidity = humidity;
             sendMessage.temperature = temperature;
             sendMessage.TaskName = pcTaskGetName(xTaskGetCurrentTaskHandle());
@@ -376,6 +376,21 @@ void servo_test()
 void app_main()
 {
 
+    esp_err_t ret = nvs_flash_init(); // NVS-Flash-Speicher initialisieren
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND)
+    {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(ret); // Fehlerprüfung
+
+    init_wifi(); // WLAN initialisieren
+
+    while(!checkWifiEstablished()){
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+
+    
     bool windowState = true;
     windowQueue = xQueueCreate(1, sizeof(windowState));
 
@@ -388,12 +403,14 @@ void app_main()
     {
         ESP_LOGI("Queue2", "windowState successfully sent");
     }
+    
+
     /*
     xTaskCreate(dht_test, "dht_pin1", configMINIMAL_STACK_SIZE * 3, &dht_gpio_1, 5, NULL);
     xTaskCreate(dht_test, "dht_pin2", configMINIMAL_STACK_SIZE * 3, &dht_gpio_2, 5, NULL);
     xTaskCreate(dht_test, "dht_pin3", configMINIMAL_STACK_SIZE * 3, &dht_gpio_3, 5, NULL);
     */
-
+    
     ESP_ERROR_CHECK(i2cdev_init());
     xTaskCreate(lcd_task, "lcd_task", configMINIMAL_STACK_SIZE * 5, NULL, 5, NULL);
 
@@ -402,6 +419,7 @@ void app_main()
     xTaskCreate(dht_task, "dht_task1", configMINIMAL_STACK_SIZE * 3, &dht_gpio_1, 5, &dht_task1);
     xTaskCreate(dht_task, "dht_task2", configMINIMAL_STACK_SIZE * 3, &dht_gpio_2, 5, &dht_task2);
     xTaskCreate(dht_task, "dht_task3", configMINIMAL_STACK_SIZE * 3, &dht_gpio_3, 5, &dht_task3);
+    
 
     //test
 }
