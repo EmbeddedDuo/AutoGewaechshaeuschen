@@ -32,7 +32,7 @@ static const adc_unit_t unit = ADC_UNIT_1;
 
 #define SERVO_CH1_PIN 25
 
-QueueHandle_t windowQueue;
+QueueHandle_t avgTempQueue;
 
 TaskHandle_t dht_task1 = NULL;
 TaskHandle_t dht_task2 = NULL;
@@ -47,7 +47,7 @@ typedef struct DhtQueueMessage
     float temperature;
 };
 
-struct DhtQueueMessage dhtMessages [3];
+struct DhtQueueMessage dhtMessages[3];
 
 static uint32_t get_time_sec()
 {
@@ -60,7 +60,6 @@ static const uint8_t char_data[] = {
     0x04, 0x0e, 0x0e, 0x0e, 0x1f, 0x00, 0x04, 0x00,
     0x1f, 0x11, 0x0a, 0x04, 0x0a, 0x11, 0x1f, 0x00};
 
-
 void lcd_task(void *pvParameters)
 {
     hd44780_t lcd = initializeHD44780();
@@ -71,23 +70,11 @@ void lcd_task(void *pvParameters)
 
     struct DhtQueueMessage ReceiveMessage;
 
-    float avgTemperature = 0.0;
-    float avgHumidity = 0.0;
-
     while (1)
     {
 
-        float tmpAvgTemperature = 0.0;
-        float tmpAvgHumidity = 0.0;
-
-        if (uxQueueSpacesAvailable(temperatureQueue) == 0)
-        {
-            vTaskSuspend(dht_task1);
-            vTaskSuspend(dht_task2);
-            vTaskSuspend(dht_task3);
-        }
-
-        uint8_t counter = 0;
+        float avgTemperature = 0.0;
+        float avgHumidity = 0.0;
 
         while (uxQueueSpacesAvailable(temperatureQueue) != 3)
         {
@@ -96,33 +83,46 @@ void lcd_task(void *pvParameters)
                 ESP_LOGI("Queue", "data successfully received from %s", ReceiveMessage.TaskName);
                 printf("Humidity: %.1f  ,  Temperature: %.1f  \n", ReceiveMessage.humidity, ReceiveMessage.temperature);
 
-                dhtMessages[counter] = ReceiveMessage;
-                tmpAvgHumidity+= ReceiveMessage.humidity;
-                tmpAvgTemperature += ReceiveMessage.temperature;
-
-                counter ++;
+                if (strcmp(ReceiveMessage.TaskName, "dht_task1") == 0)
+                {
+                    dhtMessages[0] = ReceiveMessage;
+                }
+                else if (strcmp(ReceiveMessage.TaskName, "dht_task2") == 0)
+                {
+                    dhtMessages[1] = ReceiveMessage;
+                }
+                else
+                {
+                    dhtMessages[2] = ReceiveMessage;
+                }
             }
             else
             {
                 ESP_LOGW("Queue", "couldnt recieve Data");
-            }   
-
+            }
         }
 
-        tmpAvgTemperature /= 3;
-        tmpAvgHumidity /= 3;
+        for(uint8_t i = 0; i < 3; i++){
+            avgHumidity += dhtMessages[i].humidity;
+            avgTemperature += dhtMessages[i].temperature;
+        }
 
-        avgHumidity = tmpAvgHumidity;
-        avgTemperature = tmpAvgTemperature;
+        avgHumidity /= 3;
+        avgTemperature /= 3;
+
+        if (xQueueSend(avgTempQueue, (void *)&avgTemperature, (TickType_t)0) == pdTRUE)
+        {
+            ESP_LOGI("avgTempQueue", "Average temperature successfully sent");
+        }
+        else
+        {
+            ESP_LOGI("avgTempQueue", "nope");
+        }
 
         printHumidity(lcd, avgHumidity);
         printTemperature(lcd, avgTemperature);
 
-        vTaskResume(dht_task1);
-        vTaskResume(dht_task2);
-        vTaskResume(dht_task3);
-
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        vTaskDelay(pdMS_TO_TICKS(2000));
     }
 }
 
@@ -135,25 +135,21 @@ void dht_task(void *pvParameters)
     float temperature, humidity;
 
     struct DhtQueueMessage sendMessage;
-    temperatureQueue = xQueueCreate(3, sizeof(sendMessage));
-
-    if (temperatureQueue == NULL)
-    {
-        ESP_LOGE("Queue", "Queue couldnt be created");
-    }
 
     while (1)
     {
         if (dht_read_float_data(SENSOR_TYPE, dht_gpio, &humidity, &temperature) == ESP_OK)
         {
-            ESP_LOGI("DHT","Humidity: %.1f%% Temp: %.1fC an Pin %u\n", humidity, temperature, dht_gpio);
+            ESP_LOGI("DHT", "Humidity: %.1f%% Temp: %.1fC an Pin %u\n", humidity, temperature, dht_gpio);
             sendMessage.humidity = humidity;
             sendMessage.temperature = temperature;
             sendMessage.TaskName = pcTaskGetName(xTaskGetCurrentTaskHandle());
             if (xQueueSend(temperatureQueue, (void *)&sendMessage, (TickType_t)0) == pdTRUE)
             {
                 ESP_LOGI("Queue", "temperature successfully sent");
-            } else{
+            }
+            else
+            {
                 ESP_LOGW("Queue", "Could not sent Data");
             }
         }
@@ -167,7 +163,6 @@ void dht_task(void *pvParameters)
         vTaskDelay(pdMS_TO_TICKS(2000));
     }
 }
-
 
 void photoresistor_test()
 {
@@ -220,7 +215,6 @@ void photoresistor_test()
 
 void servo_task()
 {
-
     servo_config_t servo_cfg = {
         .max_angle = 180,
         .min_width_us = 500,
@@ -237,37 +231,46 @@ void servo_task()
         .channel_number = 1,
     };
     ESP_ERROR_CHECK(iot_servo_init(LEDC_LOW_SPEED_MODE, &servo_cfg));
+
+    bool isOpen = false;
+
+    float avgTemperature;
+
     while (true)
     {
-        bool windowState;
-        size_t i;
-        if (xQueueReceive(windowQueue, &windowState, (TickType_t)5) == pdTRUE)
+        TickType_t delayBuff = 0;
+        if (xQueueReceive(avgTempQueue, &avgTemperature, (TickType_t)5) == pdTRUE)
         {
-            ESP_LOGI("Queue2", "windowState successfully received");
-
-            if (windowState)
+            ESP_LOGI("avgTempQueue", "Avg Temp recieved: %f", avgTemperature);
+            if (avgTemperature >= 25 && !isOpen)
             {
-                for (i = 70; i <= 160; i++)
+                for (uint8_t i = 70; i <= 160; i++)
                 {
                     iot_servo_write_angle(LEDC_LOW_SPEED_MODE, 1, i);
-                    vTaskDelay(50 / portTICK_PERIOD_MS);
+                    vTaskDelay(pdMS_TO_TICKS(50));
                     ESP_LOGI("servo", "[%d] ", i);
                 }
+                isOpen = true;
+
+                delayBuff = 2000;
             }
-            else
+            else if (avgTemperature < 25 && isOpen)
             {
 
-                for (i = 160; i >= 50; i--)
+                for (uint8_t i = 160; i >= 70; i--)
                 {
                     iot_servo_write_angle(LEDC_LOW_SPEED_MODE, 1, i);
-                    vTaskDelay(50 / portTICK_PERIOD_MS);
+                    vTaskDelay(pdMS_TO_TICKS(50));
                     ESP_LOGI("servo", "[%d] ", i);
                 }
+                isOpen = false;
+
+                delayBuff = 2000;
             }
         }
+        vTaskDelay(pdMS_TO_TICKS(50 + delayBuff));
     }
 }
-
 
 void app_main()
 {
@@ -282,33 +285,34 @@ void app_main()
 
     init_wifi(); // WLAN initialisieren
 
-    while(!checkWifiEstablished()){
+    while (!checkWifiEstablished())
+    {
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 
-    
-    bool windowState = true;
-    windowQueue = xQueueCreate(1, sizeof(windowState));
+    temperatureQueue = xQueueCreate(3, sizeof(struct DhtQueueMessage));
 
-    if (windowQueue == NULL)
+    if (temperatureQueue == NULL)
+    {
+        ESP_LOGE("Queue", "Queue couldnt be created");
+    }
+
+    avgTempQueue = xQueueCreate(2, sizeof(float));
+
+    if (avgTempQueue == NULL)
     {
         ESP_LOGE("Queue2", "Queue couldnt be created");
     }
 
-    if (xQueueSend(windowQueue, (void *)&windowState, (TickType_t)3) == pdTRUE)
-    {
-        ESP_LOGI("Queue2", "windowState successfully sent");
-    }
-    
     ESP_ERROR_CHECK(i2cdev_init());
     xTaskCreate(lcd_task, "lcd_task", configMINIMAL_STACK_SIZE * 5, NULL, 5, NULL);
 
     // xTaskCreate(photoresistor_test, "photoresistor_test", configMINIMAL_STACK_SIZE * 5, NULL, 5, NULL);
-    xTaskCreate(servo_task, "servo_task", configMINIMAL_STACK_SIZE * 5, NULL, 5, NULL);
     xTaskCreate(dht_task, "dht_task1", configMINIMAL_STACK_SIZE * 3, &dht_gpio_1, 5, &dht_task1);
     xTaskCreate(dht_task, "dht_task2", configMINIMAL_STACK_SIZE * 3, &dht_gpio_2, 5, &dht_task2);
     xTaskCreate(dht_task, "dht_task3", configMINIMAL_STACK_SIZE * 3, &dht_gpio_3, 5, &dht_task3);
-    
 
-    //test
+    xTaskCreate(servo_task, "servo_task", configMINIMAL_STACK_SIZE * 5, NULL, 5, NULL);
+
+    // test
 }
