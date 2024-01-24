@@ -17,7 +17,17 @@
 #include <dht.h>
 #include <wifiGartenhaus.h>
 
+#include <blynk.h>
+
+#define BLYNK_TEMPLATE_ID           "TMPL4aoujvwhG"
+#define BLYNK_TEMPLATE_NAME         "Quickstart Template"
+#define BLYNK_AUTH_TOKEN            "0QtNv1gSqjpQ3pEfjLEPNi4JE8PXEomC"
+#define BLYNK_PRINT Serial
+
+static const char *tag = "blynk-example";
+
 #define SENSOR_TYPE DHT_TYPE_AM2301
+
 
 uint8_t dht_gpio_1 = 18;
 uint8_t dht_gpio_2 = 5;
@@ -373,6 +383,10 @@ void servo_test()
     }
 } */
 
+static void state_handler(blynk_client_t *c, const blynk_state_evt_t *ev, void *data) {
+	ESP_LOGI(tag, "state: %d\n", ev->state);
+}
+
 void app_main()
 {
 
@@ -390,10 +404,29 @@ void app_main()
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 
+    blynk_client_t *client = malloc(sizeof(blynk_client_t));
+	blynk_init(client);
+
+    	blynk_options_t opt = {
+		.token = BLYNK_AUTH_TOKEN,
+		.server = "192.168.178.73:3888",
+		/* Use default timeouts */
+	};
+
+    blynk_set_options(client, &opt);
+
+	/* Subscribe to state changes and errors */
+	blynk_set_state_handler(client, state_handler, NULL);
+
+
+	/* Start Blynk client task */
+	blynk_start(client);
+
     
     bool windowState = true;
     windowQueue = xQueueCreate(1, sizeof(windowState));
 
+    /*
     if (windowQueue == NULL)
     {
         ESP_LOGE("Queue2", "Queue couldnt be created");
@@ -402,7 +435,7 @@ void app_main()
     if (xQueueSend(windowQueue, (void *)&windowState, (TickType_t)3) == pdTRUE)
     {
         ESP_LOGI("Queue2", "windowState successfully sent");
-    }
+    } */
     
 
     /*
@@ -411,6 +444,7 @@ void app_main()
     xTaskCreate(dht_test, "dht_pin3", configMINIMAL_STACK_SIZE * 3, &dht_gpio_3, 5, NULL);
     */
     
+    /* 
     ESP_ERROR_CHECK(i2cdev_init());
     xTaskCreate(lcd_task, "lcd_task", configMINIMAL_STACK_SIZE * 5, NULL, 5, NULL);
 
@@ -419,7 +453,7 @@ void app_main()
     xTaskCreate(dht_task, "dht_task1", configMINIMAL_STACK_SIZE * 3, &dht_gpio_1, 5, &dht_task1);
     xTaskCreate(dht_task, "dht_task2", configMINIMAL_STACK_SIZE * 3, &dht_gpio_2, 5, &dht_task2);
     xTaskCreate(dht_task, "dht_task3", configMINIMAL_STACK_SIZE * 3, &dht_gpio_3, 5, &dht_task3);
-    
+    */
 
     //test
 }
