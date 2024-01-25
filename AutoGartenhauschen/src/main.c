@@ -17,6 +17,11 @@
 #include <dht.h>
 #include <wifiGartenhaus.h>
 
+#include "freertos/semphr.h" // Semaphore
+#include "esp_event.h"
+#include "sdkconfig.h"
+#include "esp_http_server.h"
+
 #define SENSOR_TYPE DHT_TYPE_AM2301
 
 uint8_t dht_gpio_1 = 18;
@@ -49,6 +54,17 @@ typedef struct DhtQueueMessage
 
 struct DhtQueueMessage dhtMessages[3];
 
+
+
+float  temperature = 25.5; // Beispieltemperaturwert
+float humidity = 50.0;    // Beispiel-Luftfeuchtigkeitswert
+
+
+SemaphoreHandle_t tempUpdateSemaphore;
+SemaphoreHandle_t humUpdateSemaphore;
+
+
+
 static uint32_t get_time_sec()
 {
     struct timeval tv;
@@ -59,6 +75,7 @@ static uint32_t get_time_sec()
 static const uint8_t char_data[] = {
     0x04, 0x0e, 0x0e, 0x0e, 0x1f, 0x00, 0x04, 0x00,
     0x1f, 0x11, 0x0a, 0x04, 0x0a, 0x11, 0x1f, 0x00};
+
 
 void lcd_task(void *pvParameters)
 {
@@ -109,6 +126,10 @@ void lcd_task(void *pvParameters)
 
         avgHumidity /= 3;
         avgTemperature /= 3;
+
+        xSemaphoreTake(humUpdateSemaphore, portMAX_DELAY);
+        humidity =  avgHumidity;
+        xSemaphoreGive(humUpdateSemaphore);
 
         if (xQueueSend(avgTempQueue, (void *)&avgTemperature, (TickType_t)0) == pdTRUE)
         {
@@ -269,11 +290,118 @@ void servo_task()
             }
         }
         vTaskDelay(pdMS_TO_TICKS(50 + delayBuff));
+
+        xSemaphoreTake(tempUpdateSemaphore, portMAX_DELAY);
+        temperature =  avgTemperature;
+        xSemaphoreGive(tempUpdateSemaphore);
     }
+}
+
+
+esp_err_t get_root_handler(httpd_req_t *req)
+{
+    char buffer[20];
+    char buffer2[20];
+    snprintf(buffer, sizeof(buffer), "%.1f", temperature);
+    snprintf(buffer2, sizeof(buffer2), "%.1f", humidity);
+
+    const char *tempStringValue = buffer;
+    const char *humiStringValue = buffer2;
+
+    /* Send a simple response */
+    char str1[] = "<!DOCTYPE html>\
+                        <html>\
+                        <head>\
+                            <title> ESP32 Web Server</title>\
+                            <script>\
+                                function updateValues() {\
+                                    var xhttp = new XMLHttpRequest();\
+                                    xhttp.onreadystatechange = function() {\
+                                        if (this.readyState == 4 && this.status == 200) {\
+                                            var response = JSON.parse(this.responseText);\
+                                            document.getElementById('temperature').innerHTML = response.temperature;\
+                                            document.getElementById('humidity').innerHTML = response.humidity;\
+                                        }\
+                                    };\
+                                    xhttp.open('GET', '/data', true);\
+                                    xhttp.send();\
+                                }\
+                                setInterval(updateValues, 1000); // Update every 5 seconds\
+                            </script>\
+                        </head>\
+                        <body style = \"background-color : white; text-align: center \">\
+                            <div>\
+                                <h2>Temperature</h2>\
+                                <p style = \"font-size: 23px\" id='temperature'>"; // Updated ID
+    char str2[] = "</p>\
+                            </div>\
+                            <div>\
+                                <h2>Humidity</h2>\
+                                <p style = \"font-size: 23px\" id='humidity'>"; // Updated ID
+    char str3[] = "</p>\
+                            </div>\
+                        </body>\
+                        </html>";
+
+    /* Send a simple response */
+    httpd_resp_sendstr_chunk(req, str1);
+    httpd_resp_sendstr_chunk(req, tempStringValue);
+    httpd_resp_sendstr_chunk(req, str2);
+    httpd_resp_sendstr_chunk(req, humiStringValue);
+    httpd_resp_sendstr_chunk(req, str3);
+    httpd_resp_send_chunk(req, str2, 0);
+
+    return ESP_OK;
+}
+
+esp_err_t get_data_handler(httpd_req_t *req)
+{
+    char buffer[50];
+    snprintf(buffer, sizeof(buffer), "{\"temperature\": %.1f, \"humidity\": %.1f}", temperature, humidity);
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, buffer, strlen(buffer));
+
+    return ESP_OK;
+}
+
+/* URI handler structure for GET /uri */
+httpd_uri_t uri_get_root = {
+    .uri = "/",
+    .method = HTTP_GET,
+    .handler = get_root_handler,
+    .user_ctx = NULL
+};
+
+httpd_uri_t uri_get_data = {
+    .uri = "/data",
+    .method = HTTP_GET,
+    .handler = get_data_handler,
+    .user_ctx = NULL
+};
+
+httpd_handle_t start_webserver(void)
+{
+    /* Generate default configuration */
+    httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+    /* Empty handle to esp_http_server */
+    httpd_handle_t server = NULL;
+    /* Start the httpd server */
+    if (httpd_start(&server, &config) == ESP_OK)
+    {
+        /* Register URI handlers */
+        httpd_register_uri_handler(server, &uri_get_root);
+        httpd_register_uri_handler(server, &uri_get_data);
+    }
+    return server;
 }
 
 void app_main()
 {
+
+    tempUpdateSemaphore = xSemaphoreCreateMutex();
+    humUpdateSemaphore = xSemaphoreCreateMutex();
+
 
     esp_err_t ret = nvs_flash_init(); // NVS-Flash-Speicher initialisieren
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND)
@@ -313,6 +441,8 @@ void app_main()
     xTaskCreate(dht_task, "dht_task3", configMINIMAL_STACK_SIZE * 3, &dht_gpio_3, 5, &dht_task3);
 
     xTaskCreate(servo_task, "servo_task", configMINIMAL_STACK_SIZE * 5, NULL, 5, NULL);
+
+     start_webserver();
 
     // test
 }
