@@ -43,7 +43,6 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
 void init_wifi()
 {
     esp_netif_init();                                    // Netzwerk-Interface initialisieren
-    ESP_ERROR_CHECK(esp_event_loop_create_default());    // Standard-Event-Schleife erstellen
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT(); // WLAN-Initialisierungskonfiguration erstellen
     cfg.nvs_enable = false;
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));                                                                   // WLAN-Subsystem initialisieren

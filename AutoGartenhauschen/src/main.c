@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <inttypes.h>
@@ -43,7 +44,9 @@ TaskHandle_t dht_task1 = NULL;
 TaskHandle_t dht_task2 = NULL;
 TaskHandle_t dht_task3 = NULL;
 
-QueueHandle_t temperatureQueue;
+
+QueueHandle_t DhtDataQueue;
+QueueHandle_t DataHandlerQueue;
 
 typedef struct DhtQueueMessage
 {
@@ -54,16 +57,15 @@ typedef struct DhtQueueMessage
 
 struct DhtQueueMessage dhtMessages[3];
 
-
-
+/*
 float  temperature = 25.5; // Beispieltemperaturwert
 float humidity = 50.0;    // Beispiel-Luftfeuchtigkeitswert
-
+*/
 
 SemaphoreHandle_t tempUpdateSemaphore;
 SemaphoreHandle_t humUpdateSemaphore;
 
-
+float thresholdTemperature = 25;
 
 static uint32_t get_time_sec()
 {
@@ -75,7 +77,6 @@ static uint32_t get_time_sec()
 static const uint8_t char_data[] = {
     0x04, 0x0e, 0x0e, 0x0e, 0x1f, 0x00, 0x04, 0x00,
     0x1f, 0x11, 0x0a, 0x04, 0x0a, 0x11, 0x1f, 0x00};
-
 
 void lcd_task(void *pvParameters)
 {
@@ -93,9 +94,9 @@ void lcd_task(void *pvParameters)
         float avgTemperature = 0.0;
         float avgHumidity = 0.0;
 
-        while (uxQueueSpacesAvailable(temperatureQueue) != 3)
+        while (uxQueueSpacesAvailable(DhtDataQueue) != 3)
         {
-            if (xQueueReceive(temperatureQueue, &ReceiveMessage, (TickType_t)5) == pdTRUE)
+            if (xQueueReceive(DhtDataQueue, &ReceiveMessage, (TickType_t)5) == pdTRUE)
             {
                 ESP_LOGI("Queue", "data successfully received from %s", ReceiveMessage.TaskName);
                 printf("Humidity: %.1f  ,  Temperature: %.1f  \n", ReceiveMessage.humidity, ReceiveMessage.temperature);
@@ -119,17 +120,14 @@ void lcd_task(void *pvParameters)
             }
         }
 
-        for(uint8_t i = 0; i < 3; i++){
+        for (uint8_t i = 0; i < 3; i++)
+        {
             avgHumidity += dhtMessages[i].humidity;
             avgTemperature += dhtMessages[i].temperature;
         }
 
         avgHumidity /= 3;
         avgTemperature /= 3;
-
-        xSemaphoreTake(humUpdateSemaphore, portMAX_DELAY);
-        humidity =  avgHumidity;
-        xSemaphoreGive(humUpdateSemaphore);
 
         if (xQueueSend(avgTempQueue, (void *)&avgTemperature, (TickType_t)0) == pdTRUE)
         {
@@ -138,6 +136,15 @@ void lcd_task(void *pvParameters)
         else
         {
             ESP_LOGI("avgTempQueue", "nope");
+        }
+
+        if (xQueueSend(DataHandlerQueue, (void *)&avgTemperature, (TickType_t)0) == pdTRUE && xQueueSend(DataHandlerQueue, (void *)&avgHumidity, (TickType_t)0) == pdTRUE)
+        {
+            ESP_LOGI("DataHandlerQueue", "Data successfully sent to DataHandler");
+        }
+        else
+        {
+            ESP_LOGI("DataHandlerQueue", "nope");
         }
 
         printHumidity(lcd, avgHumidity);
@@ -165,7 +172,7 @@ void dht_task(void *pvParameters)
             sendMessage.humidity = humidity;
             sendMessage.temperature = temperature;
             sendMessage.TaskName = pcTaskGetName(xTaskGetCurrentTaskHandle());
-            if (xQueueSend(temperatureQueue, (void *)&sendMessage, (TickType_t)0) == pdTRUE)
+            if (xQueueSend(DhtDataQueue, (void *)&sendMessage, (TickType_t)0) == pdTRUE)
             {
                 ESP_LOGI("Queue", "temperature successfully sent");
             }
@@ -263,7 +270,7 @@ void servo_task()
         if (xQueueReceive(avgTempQueue, &avgTemperature, (TickType_t)5) == pdTRUE)
         {
             ESP_LOGI("avgTempQueue", "Avg Temp recieved: %f", avgTemperature);
-            if (avgTemperature >= 25 && !isOpen)
+            if (avgTemperature >= thresholdTemperature && !isOpen)
             {
                 for (uint8_t i = 70; i <= 160; i++)
                 {
@@ -275,7 +282,7 @@ void servo_task()
 
                 delayBuff = 2000;
             }
-            else if (avgTemperature < 25 && isOpen)
+            else if (avgTemperature < thresholdTemperature && isOpen)
             {
 
                 for (uint8_t i = 160; i >= 70; i--)
@@ -290,23 +297,11 @@ void servo_task()
             }
         }
         vTaskDelay(pdMS_TO_TICKS(50 + delayBuff));
-
-        xSemaphoreTake(tempUpdateSemaphore, portMAX_DELAY);
-        temperature =  avgTemperature;
-        xSemaphoreGive(tempUpdateSemaphore);
     }
 }
 
-
 esp_err_t get_root_handler(httpd_req_t *req)
 {
-    char buffer[20];
-    char buffer2[20];
-    snprintf(buffer, sizeof(buffer), "%.1f", temperature);
-    snprintf(buffer2, sizeof(buffer2), "%.1f", humidity);
-
-    const char *tempStringValue = buffer;
-    const char *humiStringValue = buffer2;
 
     /* Send a simple response */
     char str1[] = "<!DOCTYPE html>\
@@ -321,6 +316,7 @@ esp_err_t get_root_handler(httpd_req_t *req)
                                             var response = JSON.parse(this.responseText);\
                                             document.getElementById('temperature').innerHTML = response.temperature;\
                                             document.getElementById('humidity').innerHTML = response.humidity;\
+                                            document.getElementById('numberInput').placeholder = response.threshold;\
                                         }\
                                     };\
                                     xhttp.open('GET', '/data', true);\
@@ -337,18 +333,26 @@ esp_err_t get_root_handler(httpd_req_t *req)
                             </div>\
                             <div>\
                                 <h2>Humidity</h2>\
-                                <p style = \"font-size: 23px\" id='humidity'>"; // Updated ID
+                                <p style = \"font-size: 23px\" id='humidity'>";    // Updated ID
+
     char str3[] = "</p>\
+                            </div>\
+                            <div>\
+                                <form action=\"/submit\" method=\"post\">\
+                                <label for=\"numberInput\">Enter Target Temperature:</label>\
+                                <input type=\"number\" name=\"data\" id=\"numberInput\" min=\"15\" max=\"35\">\
+                                <input type=\"submit\" value=\"Submit\">\
+                        </form>";
+    char str4[] = "</p>\
                             </div>\
                         </body>\
                         </html>";
 
     /* Send a simple response */
     httpd_resp_sendstr_chunk(req, str1);
-    httpd_resp_sendstr_chunk(req, tempStringValue);
     httpd_resp_sendstr_chunk(req, str2);
-    httpd_resp_sendstr_chunk(req, humiStringValue);
     httpd_resp_sendstr_chunk(req, str3);
+    httpd_resp_sendstr_chunk(req, str4);
     httpd_resp_send_chunk(req, str2, 0);
 
     return ESP_OK;
@@ -356,11 +360,48 @@ esp_err_t get_root_handler(httpd_req_t *req)
 
 esp_err_t get_data_handler(httpd_req_t *req)
 {
-    char buffer[50];
-    snprintf(buffer, sizeof(buffer), "{\"temperature\": %.1f, \"humidity\": %.1f}", temperature, humidity);
+    static float temperature = 0;
+    static float humidity = 0;
+    float tempTemperature, tempHumidity;
+
+    if (xQueueReceive(DataHandlerQueue, &tempTemperature, (TickType_t)5) == pdTRUE && xQueueReceive(DataHandlerQueue, &tempHumidity, (TickType_t)5) == pdTRUE)
+    {
+        ESP_LOGI("DataHandlerQueue", "Data successfully recieved in DataHandler");
+        temperature = tempTemperature;
+        humidity = tempHumidity;
+    }
+
+    char buffer[100];
+    snprintf(buffer, sizeof(buffer), "{\"temperature\": %.1f, \"humidity\": %.1f, \"threshold\": %.1f}", temperature, humidity, thresholdTemperature);
 
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, buffer, strlen(buffer));
+
+    return ESP_OK;
+}
+
+esp_err_t post_threshold_handler(httpd_req_t *req)
+{
+    char buf[100];
+    int ret, remaining = req->content_len;
+
+    while (remaining > 0) {
+        if ((ret = httpd_req_recv(req, buf, sizeof(buf))) <= 0) {
+            if (ret == HTTPD_SOCK_ERR_TIMEOUT) {
+                httpd_resp_send_408(req);
+            }
+            return ESP_FAIL;
+        }
+
+        remaining -= ret;
+    }
+
+    char data_param[32];
+    if (httpd_query_key_value(buf, "data", data_param, sizeof(data_param)) == ESP_OK) {
+        int received_data = atoi(data_param);
+        ESP_LOGI("threshold", "Empfangene Zahl: %d", received_data);
+        thresholdTemperature = (float) received_data;
+    }
 
     return ESP_OK;
 }
@@ -370,20 +411,25 @@ httpd_uri_t uri_get_root = {
     .uri = "/",
     .method = HTTP_GET,
     .handler = get_root_handler,
-    .user_ctx = NULL
-};
+    .user_ctx = NULL};
 
 httpd_uri_t uri_get_data = {
     .uri = "/data",
     .method = HTTP_GET,
     .handler = get_data_handler,
-    .user_ctx = NULL
-};
+    .user_ctx = NULL};
+
+httpd_uri_t uri_post_threshold = {
+    .uri = "/submit",
+    .method = HTTP_POST,
+    .handler = post_threshold_handler,
+    .user_ctx = NULL};
 
 httpd_handle_t start_webserver(void)
 {
     /* Generate default configuration */
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+    config.stack_size = 8192;
     /* Empty handle to esp_http_server */
     httpd_handle_t server = NULL;
     /* Start the httpd server */
@@ -392,17 +438,13 @@ httpd_handle_t start_webserver(void)
         /* Register URI handlers */
         httpd_register_uri_handler(server, &uri_get_root);
         httpd_register_uri_handler(server, &uri_get_data);
+        httpd_register_uri_handler(server, &uri_post_threshold);
     }
     return server;
 }
 
 void app_main()
 {
-
-    tempUpdateSemaphore = xSemaphoreCreateMutex();
-    humUpdateSemaphore = xSemaphoreCreateMutex();
-
-
     esp_err_t ret = nvs_flash_init(); // NVS-Flash-Speicher initialisieren
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND)
     {
@@ -411,6 +453,8 @@ void app_main()
     }
     ESP_ERROR_CHECK(ret); // Fehlerprüfung
 
+    ESP_ERROR_CHECK(esp_event_loop_create_default()); 
+
     init_wifi(); // WLAN initialisieren
 
     while (!checkWifiEstablished())
@@ -418,9 +462,9 @@ void app_main()
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 
-    temperatureQueue = xQueueCreate(3, sizeof(struct DhtQueueMessage));
+    DhtDataQueue = xQueueCreate(3, sizeof(struct DhtQueueMessage));
 
-    if (temperatureQueue == NULL)
+    if (DhtDataQueue == NULL)
     {
         ESP_LOGE("Queue", "Queue couldnt be created");
     }
@@ -432,17 +476,24 @@ void app_main()
         ESP_LOGE("Queue2", "Queue couldnt be created");
     }
 
+    DataHandlerQueue = xQueueCreate(2, sizeof(float));
+
+    if (DhtDataQueue == NULL)
+    {
+        ESP_LOGE("Queue", "Queue couldnt be created");
+    }
+
     ESP_ERROR_CHECK(i2cdev_init());
     xTaskCreate(lcd_task, "lcd_task", configMINIMAL_STACK_SIZE * 5, NULL, 5, NULL);
 
-    // xTaskCreate(photoresistor_test, "photoresistor_test", configMINIMAL_STACK_SIZE * 5, NULL, 5, NULL);
+    xTaskCreate(photoresistor_test, "photoresistor_test", configMINIMAL_STACK_SIZE * 5, NULL, 5, NULL);
     xTaskCreate(dht_task, "dht_task1", configMINIMAL_STACK_SIZE * 3, &dht_gpio_1, 5, &dht_task1);
     xTaskCreate(dht_task, "dht_task2", configMINIMAL_STACK_SIZE * 3, &dht_gpio_2, 5, &dht_task2);
     xTaskCreate(dht_task, "dht_task3", configMINIMAL_STACK_SIZE * 3, &dht_gpio_3, 5, &dht_task3);
 
     xTaskCreate(servo_task, "servo_task", configMINIMAL_STACK_SIZE * 5, NULL, 5, NULL);
 
-     start_webserver();
+    start_webserver();
 
     // test
 }
