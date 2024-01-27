@@ -316,13 +316,24 @@ esp_err_t get_root_handler(httpd_req_t *req)
                                             var response = JSON.parse(this.responseText);\
                                             document.getElementById('temperature').innerHTML = response.temperature;\
                                             document.getElementById('humidity').innerHTML = response.humidity;\
-                                            document.getElementById('numberInput').placeholder = response.threshold;\
                                         }\
                                     };\
                                     xhttp.open('GET', '/data', true);\
                                     xhttp.send();\
                                 }\
-                                setInterval(updateValues, 1000); // Update every 5 seconds\
+                                setInterval(updateValues, 1000);\
+                                function submitForm() {\
+                                    var formData = new FormData(document.getElementById(\"myForm\"));\
+                                    var xhr = new XMLHttpRequest();\
+                                    xhr.open(\"POST\", \"/submit\", true);\
+                                    xhr.setRequestHeader(\"Content-type\", \"application/x-www-form-urlencoded\");\
+                                    xhr.onreadystatechange = function () {\
+                                        if (xhr.readyState == 4 && xhr.status == 200) {\
+                                        document.getElementById(\"resultContainer\").innerHTML = xhr.responseText;\
+                                        }\
+                                    };\
+                                    xhr.send(new URLSearchParams(formData));\
+                                }\
                             </script>\
                         </head>\
                         <body style = \"background-color : white; text-align: center \">\
@@ -338,14 +349,12 @@ esp_err_t get_root_handler(httpd_req_t *req)
     char str3[] = "</p>\
                             </div>\
                             <div>\
-                                <form action=\"/submit\" method=\"post\">\
-                                <label for=\"numberInput\">Enter Target Temperature:</label>\
+                                <form id=\"myForm\">\
                                 <input type=\"number\" name=\"data\" id=\"numberInput\" min=\"15\" max=\"35\">\
-                                <input type=\"submit\" value=\"Submit\">\
+                                <input type=\"button\" value=\"Submit\" onclick= \"submitForm()\">\
+                                <p style = \"font-size: 23px\" id='resultContainer'> Click To Submit Target Temperature </p>\
                         </form>";
-    char str4[] = "</p>\
-                            </div>\
-                        </body>\
+    char str4[] = "     </body>\
                         </html>";
 
     /* Send a simple response */
@@ -353,7 +362,7 @@ esp_err_t get_root_handler(httpd_req_t *req)
     httpd_resp_sendstr_chunk(req, str2);
     httpd_resp_sendstr_chunk(req, str3);
     httpd_resp_sendstr_chunk(req, str4);
-    httpd_resp_send_chunk(req, str2, 0);
+    httpd_resp_sendstr_chunk(req, NULL);
 
     return ESP_OK;
 }
@@ -372,7 +381,7 @@ esp_err_t get_data_handler(httpd_req_t *req)
     }
 
     char buffer[100];
-    snprintf(buffer, sizeof(buffer), "{\"temperature\": %.1f, \"humidity\": %.1f, \"threshold\": %.1f}", temperature, humidity, thresholdTemperature);
+    snprintf(buffer, sizeof(buffer), "{\"temperature\": %.1f, \"humidity\": %.1f}", temperature, humidity);
 
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, buffer, strlen(buffer));
@@ -401,7 +410,15 @@ esp_err_t post_threshold_handler(httpd_req_t *req)
         int received_data = atoi(data_param);
         ESP_LOGI("threshold", "Empfangene Zahl: %d", received_data);
         thresholdTemperature = (float) received_data;
+
+        const char *resp [64];
+        snprintf(resp,64,"Target Successfully set to %d", received_data);
+        httpd_resp_send(req, resp, strlen(resp));
+    } else {
+        // Bei Problemen mit der Datenverarbeitung den Statuscode 500 (Internal Server Error) senden
+        httpd_resp_set_status(req, "500 Internal Server Error");
     }
+
 
     return ESP_OK;
 }
