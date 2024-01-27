@@ -224,6 +224,19 @@ void photoresistor_test()
     esp_adc_cal_characteristics_t *adc_chars = calloc(1, sizeof(esp_adc_cal_characteristics_t));
     esp_adc_cal_value_t val_type = esp_adc_cal_characterize(unit, ADC_ATTEN_DB_11, ADC_WIDTH_BIT_12, DEFAULT_VREF, adc_chars);
 
+    if (val_type == ESP_ADC_CAL_VAL_EFUSE_VREF)
+    {
+        printf("eFuse Vref");
+    }
+    else if (val_type == ESP_ADC_CAL_VAL_EFUSE_TP)
+    {
+        printf("Two Point");
+    }
+    else
+    {
+        printf("Default");
+    }
+
     while (true)
     {
         // Read data from photoresistor
@@ -318,28 +331,97 @@ void servo_task()
 esp_err_t get_root_handler(httpd_req_t *req)
 {
     // HTML content for the root page
+    /* Send a simple response */
     char str1[] = "<!DOCTYPE html>\
                         <html>\
                         <head>\
                             <title> ESP32 Web Server</title>\
                             <style>\
-                                // Styles for HTML elements\
+                                        body {\
+                                        background-color: white;\
+                                        text-align: center;\
+                                    }\
+                                    div {\
+                                        margin: 20px;\
+                                        padding: 15px;\
+                                        border: 1px solid #ddd;\
+                                        border-radius: 5px;\
+                                        background-color: #fff;\
+                                        box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);\
+                                    }\
+                                    h2 {\
+                                        color: #333;\
+                                    }\
+                                    p {\
+                                        font-size: 23px;\
+                                        color: #555;\
+                                    }\
+                                    form {\
+                                        margin-top: 20px;\
+                                    }\
+                                    label {\
+                                        font-size: 16px;\
+                                        color: #333;\
+                                        display: block;\
+                                        margin-bottom: 5px;\
+                                    }\
+                                    input[type=\"number\"] {\
+                                        padding: 8px;\
+                                        font-size: 16px;\
+                                        width: 60px;\
+                                        margin-right: 10px;\
+                                    }\
+                                    input[type=\"submit\"] {\
+                                        padding: 10px 20px;\
+                                        font-size: 16px;\
+                                        background-color: #4caf50;\
+                                        color: #fff;\
+                                        border: none;\
+                                        border-radius: 5px;\
+                                        cursor: pointer;\
+                                    }\
+                                    input[type=\"submit\"]:hover {\
+                                        background-color: #45a049;\
+                                    }\
                             </style>\
                             <title> ESP32 Web Server</title>\
                             <script>\
-                                // JavaScript functions\
+                                function updateValues() {\
+                                    var xhttp = new XMLHttpRequest();\
+                                    xhttp.onreadystatechange = function() {\
+                                        if (this.readyState == 4 && this.status == 200) {\
+                                            var response = JSON.parse(this.responseText);\
+                                            document.getElementById('temperature').innerHTML = response.temperature;\
+                                            document.getElementById('humidity').innerHTML = response.humidity;\
+                                        }\
+                                    };\
+                                    xhttp.open('GET', '/data', true);\
+                                    xhttp.send();\
+                                }\
+                                setInterval(updateValues, 1000);\
+                                function submitForm() {\
+                                    var formData = new FormData(document.getElementById(\"myForm\"));\
+                                    var xhr = new XMLHttpRequest();\
+                                    xhr.open(\"POST\", \"/submit\", true);\
+                                    xhr.setRequestHeader(\"Content-type\", \"application/x-www-form-urlencoded\");\
+                                    xhr.onreadystatechange = function () {\
+                                        if (xhr.readyState == 4 && xhr.status == 200) {\
+                                        document.getElementById(\"resultContainer\").innerHTML = xhr.responseText;\
+                                        }\
+                                    };\
+                                    xhr.send(new URLSearchParams(formData));\
+                                }\
                             </script>\
                         </head>\
                         <body style = \"background-color : white; text-align: center \">\
                             <div>\
                                 <h2>Temperature</h2>\
-                                <p id='temperature'></p>";
-
+                                <p id='temperature'></p>"; // Updated Temperature
     char str2[] = "</p>\
                             </div>\
                             <div>\
                                 <h2>Humidity</h2>\
-                                 <p id='humidity'></p>";
+                                 <p id='humidity'></p>";   // Updated Humidity
 
     char str3[] = "</p>\
                             </div>\
@@ -349,7 +431,6 @@ esp_err_t get_root_handler(httpd_req_t *req)
                                 <input type=\"button\" value=\"Submit\" onclick= \"submitForm()\">\
                                 <p style = \"font-size: 23px\" id='resultContainer'> Click To Submit Target Temperature </p>\
                         </form>";
-
     char str4[] = "     </body>\
                         </html>";
 
@@ -420,7 +501,7 @@ esp_err_t post_threshold_handler(httpd_req_t *req)
         // Convert received data to integer
         int received_data = atoi(data_param);
         ESP_LOGI("threshold", "Received value: %d", received_data);
-        
+
         // Set the threshold temperature
         thresholdTemperature = (float)received_data;
 
@@ -539,6 +620,4 @@ void app_main()
 
     start_webserver();
 
-    // test
 }
-
