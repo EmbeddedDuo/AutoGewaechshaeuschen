@@ -1,5 +1,5 @@
 # AutoGartenhaus
-Ein Embedded Networking Projekt, das die Automatisierung in einem Gartenhäuschen realisiert
+Ein Embedded Networking Projekt, das die Automatisierung in einem Gewächshäuschen realisiert
 
 Benutzte externe Libraries: https://github.com/UncleRus/esp-idf-lib <br>
                             https://github.com/espressif/esp-iot-solution
