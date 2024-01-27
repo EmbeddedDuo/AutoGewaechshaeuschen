@@ -339,14 +339,6 @@ CONFIG_PARTITION_TABLE_MD5=y
 # end of Partition Table
 
 #
-# Example LCD configuration
-#
-CONFIG_EXAMPLE_I2C_ADDR=0x27
-CONFIG_EXAMPLE_I2C_MASTER_SCL=19
-CONFIG_EXAMPLE_I2C_MASTER_SDA=18
-# end of Example LCD configuration
-
-#
 # Compiler options
 #
 CONFIG_COMPILER_OPTIMIZATION_DEFAULT=y
@@ -1592,11 +1584,26 @@ CONFIG_WIFI_PROV_STA_ALL_CHANNEL_SCAN=y
 # end of Wi-Fi Provisioning Manager
 
 #
+# LCD configuration
+#
+CONFIG_EXAMPLE_I2C_ADDR=0x3F
+CONFIG_EXAMPLE_I2C_MASTER_SCL=22
+CONFIG_EXAMPLE_I2C_MASTER_SDA=21
+# end of LCD configuration
+
+#
 # I2C
 #
 CONFIG_I2CDEV_TIMEOUT=1000
 # CONFIG_I2CDEV_NOLOCK is not set
 # end of I2C
+
+#
+# Wifi configuration
+#
+CONFIG_EXAMPLE_WIFI_SSID="FRITZ!Box 7490"
+CONFIG_EXAMPLE_WIFI_PASSWORD=""
+# end of Wifi configuration
 # end of Component config
 
 # CONFIG_IDF_EXPERIMENTAL_FEATURES is not set
