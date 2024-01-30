@@ -144,18 +144,18 @@ void lcd_task(void *pvParameters)
         }
         else
         {
-            ESP_LOGI("avgTempQueue", "nope");
+            ESP_LOGI("avgTempQueue", "Average temperature couldnt be sent");
         }
 
         // Send average temperature and humidity to DataHandlerQueue
         if (xQueueSend(DataHandlerQueue, (void *)&avgTemperature, (TickType_t)0) == pdTRUE &&
             xQueueSend(DataHandlerQueue, (void *)&avgHumidity, (TickType_t)0) == pdTRUE)
         {
-            ESP_LOGI("DataHandlerQueue", "Data successfully sent to DataHandler");
+            ESP_LOGI("DataHandlerQueue", "Temperature and Humidity successfully sent to DataHandlerQueue");
         }
         else
         {
-            ESP_LOGI("DataHandlerQueue", "nope");
+            ESP_LOGI("DataHandlerQueue", "Temperature and Humidity couldnt be sent to DataHandlerQueue");
         }
 
         // Print temperature and humidity on LCD
@@ -201,7 +201,7 @@ void dht_task(void *pvParameters)
         }
         else
         {
-            printf("Could not read data from sensor\n");
+           ESP_LOGW("DHT","Could not read data from sensor");
         }
 
         // Delay for 2 seconds
