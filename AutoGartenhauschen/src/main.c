@@ -248,18 +248,17 @@ void photoresistor_test()
         ESP_LOGI("photoresistor", "%lu mV", voltage);
 
         // Control LED based on voltage
-        if (voltage >= 2500)
+        if ((voltage >= 2500) && (gpio_get_level(LED_GPIO) == 0))
         {
-            ESP_LOGI("LED ON", "");
             gpio_set_level(LED_GPIO, 1);
         }
-        else if (voltage < 2500)
+        else if ((voltage < 2500) && (gpio_get_level(LED_GPIO) == 1))
         {
             gpio_set_level(LED_GPIO, 0);
         }
 
         // Delay for 50 ms
-        vTaskDelay(50 / portTICK_PERIOD_MS);
+        vTaskDelay(pdMS_TO_TICKS(2000));
     }
 }
 
@@ -299,7 +298,7 @@ void servo_task()
             ESP_LOGI("avgTempQueue", "Avg Temp received: %f", avgTemperature);
 
             // Control servo based on average temperature
-            if (avgTemperature >= thresholdTemperature && !isOpen)
+            if ((avgTemperature >= thresholdTemperature) && !isOpen)
             {
                 for (uint8_t i = 70; i <= 160; i++)
                 {
@@ -311,7 +310,7 @@ void servo_task()
 
                 delayBuff = 2000;
             }
-            else if (avgTemperature < thresholdTemperature && isOpen)
+            else if ((avgTemperature < thresholdTemperature) && isOpen)
             {
                 for (uint8_t i = 160; i >= 70; i--)
                 {
@@ -343,6 +342,7 @@ esp_err_t get_root_handler(httpd_req_t *req)
                                         body {\
                                         background-color: white;\
                                         text-align: center;\
+                                        font-family: Arial, Helvetica, sans-serif;\
                                     }\
                                     div {\
                                         margin: 20px;\
@@ -363,10 +363,10 @@ esp_err_t get_root_handler(httpd_req_t *req)
                                         margin-top: 20px;\
                                     }\
                                     label {\
-                                        font-size: 16px;\
+                                        font-size: 23px;\
                                         color: #333;\
                                         display: block;\
-                                        margin-bottom: 5px;\
+                                        margin: 20px 0px;\
                                     }\
                                     input[type=\"number\"] {\
                                         padding: 8px;\
@@ -374,7 +374,7 @@ esp_err_t get_root_handler(httpd_req_t *req)
                                         width: 60px;\
                                         margin-right: 10px;\
                                     }\
-                                    input[type=\"submit\"] {\
+                                    input[type=\"button\"] {\
                                         padding: 10px 20px;\
                                         font-size: 16px;\
                                         background-color: #4caf50;\
@@ -383,7 +383,7 @@ esp_err_t get_root_handler(httpd_req_t *req)
                                         border-radius: 5px;\
                                         cursor: pointer;\
                                     }\
-                                    input[type=\"submit\"]:hover {\
+                                    input[type=\"button\"]:hover {\
                                         background-color: #45a049;\
                                     }\
                             </style>\
@@ -394,8 +394,9 @@ esp_err_t get_root_handler(httpd_req_t *req)
                                     xhttp.onreadystatechange = function() {\
                                         if (this.readyState == 4 && this.status == 200) {\
                                             var response = JSON.parse(this.responseText);\
-                                            document.getElementById('temperature').innerHTML = response.temperature;\
-                                            document.getElementById('humidity').innerHTML = response.humidity;\
+                                            document.getElementById('temperature').innerHTML = response.temperature + '&degC';\
+                                            document.getElementById('humidity').innerHTML = response.humidity + '%';\
+                                            document.getElementById('numberLabel').innerHTML = 'Current Treshold Temperatue: ' + response.threshold + '&degC';\
                                         }\
                                     };\
                                     xhttp.open('GET', '/data', true);\
@@ -430,7 +431,8 @@ esp_err_t get_root_handler(httpd_req_t *req)
                             </div>\
                             <div>\
                                 <form id=\"myForm\">\
-                                <input type=\"number\" name=\"data\" id=\"numberInput\" min=\"15\" max=\"35\">\
+                                <label id= \"numberLabel\" for=\"numberInput\"></label>\
+                                <input type=\"number\" name=\"data\" id=\"numberInput\" step = \"0.1\" min=\"15\" max=\"35\">\
                                 <input type=\"button\" value=\"Submit\" onclick= \"submitForm()\">\
                                 <p style = \"font-size: 23px\" id='resultContainer'> Click To Submit Target Temperature </p>\
                         </form>";
@@ -465,7 +467,7 @@ esp_err_t get_data_handler(httpd_req_t *req)
 
     // Prepare JSON response
     char buffer[100];
-    snprintf(buffer, sizeof(buffer), "{\"temperature\": %.1f, \"humidity\": %.1f}", temperature, humidity);
+    snprintf(buffer, sizeof(buffer), "{\"temperature\": %.1f, \"humidity\": %.1f, \"threshold\": %.1f}", temperature, humidity, thresholdTemperature);
 
     // Set response type as JSON
     httpd_resp_set_type(req, "application/json");
@@ -502,15 +504,14 @@ esp_err_t post_threshold_handler(httpd_req_t *req)
     if (httpd_query_key_value(buf, "data", data_param, sizeof(data_param)) == ESP_OK)
     {
         // Convert received data to integer
-        int received_data = atoi(data_param);
-        ESP_LOGI("threshold", "Received value: %d", received_data);
+        float received_data = atof(data_param);
+        ESP_LOGI("threshold", "Received value: %.1f", received_data);
 
         // Set the threshold temperature
-        thresholdTemperature = (float)received_data;
+        thresholdTemperature = received_data;
 
-        const char *resp[64];
+        const char *resp = "Target Temperature set successfully";
         // Send response to the client
-        snprintf(resp, 64, "Target Successfully set to %d", received_data);
         httpd_resp_send(req, resp, strlen(resp));
     }
     else
