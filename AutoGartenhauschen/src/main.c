@@ -11,11 +11,14 @@
 #include <driver/adc.h>
 #include <esp_adc_cal.h>
 #include <iot_servo.h>
-#include <hd44780Gartenhaus.h>
-#include <dht.h>
-#include <wifiGartenhaus.h>
 #include "esp_event.h"
 #include "esp_http_server.h"
+#include <dht.h>
+#include "string.h"
+#include <esp_err.h>
+
+#include <hd44780Gartenhaus.h>
+#include <wifiGartenhaus.h>
 
 // Definitions for DHT sensor type and GPIO pins
 #define SENSOR_TYPE DHT_TYPE_AM2301
@@ -101,7 +104,7 @@ void lcd_task(void *pvParameters)
         {
             if (xQueueReceive(DhtDataQueue, &ReceiveMessage, (TickType_t)5) == pdTRUE)
             {
-                ESP_LOGI("Queue", "data successfully received from %s", ReceiveMessage.TaskName);
+                ESP_LOGI("DHT_to_LCD_Queue", "data successfully received from %s", ReceiveMessage.TaskName);
                 printf("Humidity: %.1f  ,  Temperature: %.1f  \n", ReceiveMessage.humidity, ReceiveMessage.temperature);
 
                 // Store received data in the array based on task name
@@ -120,7 +123,7 @@ void lcd_task(void *pvParameters)
             }
             else
             {
-                ESP_LOGW("Queue", "couldnt receive Data");
+                ESP_LOGW("DHT_to_LCD_Queue", "couldnt receive Data");
             }
         }
 
@@ -189,11 +192,11 @@ void dht_task(void *pvParameters)
             // Send data to DhtDataQueue
             if (xQueueSend(DhtDataQueue, (void *)&sendMessage, (TickType_t)0) == pdTRUE)
             {
-                ESP_LOGI("Queue", "temperature successfully sent");
+                ESP_LOGI("DHT_to_LCD_Queue", "temperature successfully sent");
             }
             else
             {
-                ESP_LOGW("Queue", "Could not send Data");
+                ESP_LOGW("DHT_to_LCD_Queue", "Could not send Data");
             }
         }
         else
@@ -619,5 +622,5 @@ void app_main()
     xTaskCreate(servo_task, "servo_task", configMINIMAL_STACK_SIZE * 5, NULL, 5, NULL);
 
     start_webserver();
-
+    
 }
