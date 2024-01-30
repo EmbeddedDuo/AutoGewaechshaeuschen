@@ -214,7 +214,7 @@ void photoresistor_test()
 
     // Set up LED GPIO
     gpio_reset_pin(LED_GPIO);
-    gpio_set_direction(LED_GPIO, GPIO_MODE_OUTPUT);
+    gpio_set_direction(LED_GPIO, GPIO_MODE_INPUT_OUTPUT);
 
     // Configure ADC
     ESP_ERROR_CHECK(adc1_config_width(ADC_WIDTH_BIT_12));
@@ -239,23 +239,28 @@ void photoresistor_test()
 
     while (true)
     {
+
+        TickType_t delayBuffer = 0;
+
         // Read data from photoresistor
         reading = adc1_get_raw(ADC1_CHANNEL_5);
         voltage = esp_adc_cal_raw_to_voltage(reading, adc_chars);
-        ESP_LOGI("photoresistor", "%lu mV", voltage);
 
         // Control LED based on voltage
         if ((voltage >= 2500) && (gpio_get_level(LED_GPIO) == 0))
-        {
+        {   
+            ESP_LOGI("LED", "LED turned on");
             gpio_set_level(LED_GPIO, 1);
+            delayBuffer = 3000;
         }
         else if ((voltage < 2500) && (gpio_get_level(LED_GPIO) == 1))
         {
+            ESP_LOGI("LED", "LED turned off");
             gpio_set_level(LED_GPIO, 0);
         }
 
         // Delay for 50 ms
-        vTaskDelay(pdMS_TO_TICKS(2000));
+        vTaskDelay(pdMS_TO_TICKS(50 + delayBuffer));
     }
 }
 
