@@ -35,7 +35,7 @@ static const adc_unit_t unit = ADC_UNIT_1;
 // LED GPIO pin
 #define LED_GPIO 14
 
-// Servo configuration
+// Servo configuration pin
 #define SERVO_CH1_PIN 25
 
 // Queues for communication between tasks
@@ -48,7 +48,7 @@ TaskHandle_t dht_task1 = NULL;
 TaskHandle_t dht_task2 = NULL;
 TaskHandle_t dht_task3 = NULL;
 
-// Structure for DHT sensor data
+// Structure for DHT sensor tasks data
 typedef struct DhtQueueMessage
 {
     char *TaskName;
@@ -59,36 +59,17 @@ typedef struct DhtQueueMessage
 // Array to store DHT sensor data from different tasks
 struct DhtQueueMessage dhtMessages[3];
 
-// Semaphores for updating temperature and humidity
-SemaphoreHandle_t tempUpdateSemaphore;
-SemaphoreHandle_t humUpdateSemaphore;
-
-// Threshold temperature for servo control
+// Threshold temperature value for servo control
 float thresholdTemperature = 25;
 
-// Function to get current time in seconds
-static uint32_t get_time_sec()
-{
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    return tv.tv_sec;
-}
-
-// Character data for custom characters on LCD
-static const uint8_t char_data[] = {
-    0x04, 0x0e, 0x0e, 0x0e, 0x1f, 0x00, 0x04, 0x00,
-    0x1f, 0x11, 0x0a, 0x04, 0x0a, 0x11, 0x1f, 0x00};
 
 // LCD task function
 void lcd_task(void *pvParameters)
 {
     // Initialize LCD
     hd44780_t lcd = initializeHD44780();
+    
     hd44780_switch_backlight(&lcd, true);
-
-    // Upload custom characters to LCD
-    hd44780_upload_character(&lcd, 0, char_data);
-    hd44780_upload_character(&lcd, 1, char_data + 8);
 
     // Structure to receive DHT sensor data
     struct DhtQueueMessage ReceiveMessage;
@@ -137,7 +118,8 @@ void lcd_task(void *pvParameters)
         avgHumidity /= 3;
         avgTemperature /= 3;
 
-        // Send average temperature to the queue
+
+        // Send average temperature to the Servo through a queue
         if (xQueueSend(avgTempQueue, (void *)&avgTemperature, (TickType_t)0) == pdTRUE)
         {
             ESP_LOGI("avgTempQueue", "Average temperature successfully sent");
@@ -147,7 +129,7 @@ void lcd_task(void *pvParameters)
             ESP_LOGI("avgTempQueue", "Average temperature couldnt be sent");
         }
 
-        // Send average temperature and humidity to DataHandlerQueue
+        // Send average temperature and humidity to DataHandlerQueue (to the Website function)
         if (xQueueSend(DataHandlerQueue, (void *)&avgTemperature, (TickType_t)0) == pdTRUE &&
             xQueueSend(DataHandlerQueue, (void *)&avgHumidity, (TickType_t)0) == pdTRUE)
         {
@@ -189,7 +171,7 @@ void dht_task(void *pvParameters)
             sendMessage.temperature = temperature;
             sendMessage.TaskName = pcTaskGetName(xTaskGetCurrentTaskHandle());
 
-            // Send data to DhtDataQueue
+            // Send data to DhtDataQueue (to the LCD Task)
             if (xQueueSend(DhtDataQueue, (void *)&sendMessage, (TickType_t)0) == pdTRUE)
             {
                 ESP_LOGI("DHT_to_LCD_Queue", "temperature successfully sent");
@@ -227,18 +209,6 @@ void photoresistor_test()
     esp_adc_cal_characteristics_t *adc_chars = calloc(1, sizeof(esp_adc_cal_characteristics_t));
     esp_adc_cal_value_t val_type = esp_adc_cal_characterize(unit, ADC_ATTEN_DB_11, ADC_WIDTH_BIT_12, DEFAULT_VREF, adc_chars);
 
-    if (val_type == ESP_ADC_CAL_VAL_EFUSE_VREF)
-    {
-        printf("eFuse Vref");
-    }
-    else if (val_type == ESP_ADC_CAL_VAL_EFUSE_TP)
-    {
-        printf("Two Point");
-    }
-    else
-    {
-        printf("Default");
-    }
 
     while (true)
     {
@@ -262,7 +232,7 @@ void photoresistor_test()
             gpio_set_level(LED_GPIO, 0);
         }
 
-        // Delay for 50 ms
+        // Delay if the LED is turned on
         vTaskDelay(pdMS_TO_TICKS(50 + delayBuffer));
     }
 }
@@ -288,6 +258,7 @@ void servo_task()
     };
     ESP_ERROR_CHECK(iot_servo_init(LEDC_LOW_SPEED_MODE, &servo_cfg));
 
+    // window status
     bool isOpen = false;
 
     float avgTemperature;
@@ -297,7 +268,7 @@ void servo_task()
         // Initialize delay buffer
         TickType_t delayBuff = 0;
 
-        // Receive average temperature from avgTempQueue
+        // Receive average temperature from avgTempQueue (From LCD Task)
         if (xQueueReceive(avgTempQueue, &avgTemperature, (TickType_t)5) == pdTRUE)
         {
             ESP_LOGI("avgTempQueue", "Avg Temp received: %f", avgTemperature);
@@ -334,11 +305,10 @@ void servo_task()
     }
 }
 
-// Handler for the root URI (GET request)
+// Handler for the root URI 
 esp_err_t get_root_handler(httpd_req_t *req)
 {
     // HTML content for the root page
-    /* Send a simple response */
     char str1[] = "<!DOCTYPE html>\
                         <html>\
                         <head>\
@@ -454,14 +424,14 @@ esp_err_t get_root_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
-// Handler for data URI (GET request)
+// Handler for data URI 
 esp_err_t get_data_handler(httpd_req_t *req)
 {
     static float temperature = 0;
     static float humidity = 0;
     float tempTemperature, tempHumidity;
 
-    // Receive data from DataHandlerQueue
+    // Receive data from DataHandlerQueue (from LCD Task)
     if (xQueueReceive(DataHandlerQueue, &tempTemperature, (TickType_t)5) == pdTRUE &&
         xQueueReceive(DataHandlerQueue, &tempHumidity, (TickType_t)5) == pdTRUE)
     {
@@ -512,10 +482,11 @@ esp_err_t post_threshold_handler(httpd_req_t *req)
         float received_data = atof(data_param);
         ESP_LOGI("threshold", "Received value: %.1f", received_data);
 
-        // Set the threshold temperature
+        // Set the threshold value for the temperature
         thresholdTemperature = received_data;
 
         const char *resp = "Target Temperature set successfully";
+
         // Send response to the client
         httpd_resp_send(req, resp, strlen(resp));
     }
@@ -528,7 +499,7 @@ esp_err_t post_threshold_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
-/* URI handler structure for GET /uri */
+/* URI handler structure for GET or POST /uri */
 httpd_uri_t uri_get_root = {
     .uri = "/",
     .method = HTTP_GET,
@@ -567,7 +538,7 @@ httpd_handle_t start_webserver(void)
 
 void app_main()
 {
-    esp_err_t ret = nvs_flash_init(); // Initialize NVS Flash memory
+    esp_err_t ret = nvs_flash_init(); // Initialize NVS Flash memory for the WIFI credentials
 
     // Check for NVS initialization errors
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND)
