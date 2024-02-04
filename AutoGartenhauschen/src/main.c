@@ -563,7 +563,7 @@ void app_main()
     // Check if DhtDataQueue is created successfully
     if (DhtDataQueue == NULL)
     {
-        ESP_LOGE("Queue", "Queue couldn't be created");
+        ESP_LOGE("DHT_to_LCD_Queue", "Queue couldn't be created");
     }
 
     avgTempQueue = xQueueCreate(2, sizeof(float));
@@ -571,15 +571,15 @@ void app_main()
     // Check if avgTempQueue is created successfully
     if (avgTempQueue == NULL)
     {
-        ESP_LOGE("Queue2", "Queue couldn't be created");
+        ESP_LOGE("avgTempQueue", "Queue couldn't be created");
     }
 
     DataHandlerQueue = xQueueCreate(2, sizeof(float));
 
     // Check if DataHandlerQueue is created successfully
-    if (DhtDataQueue == NULL)
+    if (DataHandlerQueue == NULL)
     {
-        ESP_LOGE("Queue", "Queue couldn't be created");
+        ESP_LOGE("DataHandlerQueue", "Queue couldn't be created");
     }
 
     ESP_ERROR_CHECK(i2cdev_init());
