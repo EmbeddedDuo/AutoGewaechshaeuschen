@@ -86,7 +86,6 @@ void lcd_task(void *pvParameters)
             if (xQueueReceive(DhtDataQueue, &ReceiveMessage, (TickType_t)5) == pdTRUE)
             {
                 ESP_LOGI("DHT_to_LCD_Queue", "data successfully received from %s", ReceiveMessage.TaskName);
-                printf("Humidity: %.1f  ,  Temperature: %.1f  \n", ReceiveMessage.humidity, ReceiveMessage.temperature);
 
                 // Store received data in the array based on task name
                 if (strcmp(ReceiveMessage.TaskName, "dht_task1") == 0)
