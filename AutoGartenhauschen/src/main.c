@@ -43,11 +43,6 @@ QueueHandle_t LcdToServoQueue;
 QueueHandle_t DhtToLcdQueue;
 QueueHandle_t LcdToWebsiteQueue;
 
-// Task handles
-TaskHandle_t dht_task1 = NULL;
-TaskHandle_t dht_task2 = NULL;
-TaskHandle_t dht_task3 = NULL;
-
 // Structure for DHT sensor tasks data
 typedef struct DhtQueueMessage
 {
@@ -523,6 +518,7 @@ httpd_handle_t start_webserver(void)
     /* Generate default configuration */
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.stack_size = 8192;
+    config.task_priority = 8;
     /* Empty handle to esp_http_server */
     httpd_handle_t server = NULL;
     /* Start the httpd server */
@@ -581,9 +577,9 @@ void app_main()
     xTaskCreate(photoresistor_test, "photoresistor_test", configMINIMAL_STACK_SIZE * 5, NULL, 5, NULL);
 
     // Create DHT sensor tasks
-    xTaskCreate(dht_task, "dht_task1", configMINIMAL_STACK_SIZE * 3, &dht_gpio_1, 5, &dht_task1);
-    xTaskCreate(dht_task, "dht_task2", configMINIMAL_STACK_SIZE * 3, &dht_gpio_2, 5, &dht_task2);
-    xTaskCreate(dht_task, "dht_task3", configMINIMAL_STACK_SIZE * 3, &dht_gpio_3, 5, &dht_task3);
+    xTaskCreate(dht_task, "dht_task1", configMINIMAL_STACK_SIZE * 3, &dht_gpio_1, 5, NULL);
+    xTaskCreate(dht_task, "dht_task2", configMINIMAL_STACK_SIZE * 3, &dht_gpio_2, 5, NULL);
+    xTaskCreate(dht_task, "dht_task3", configMINIMAL_STACK_SIZE * 3, &dht_gpio_3, 5, NULL);
 
     // Create servo task
     xTaskCreate(servo_task, "servo_task", configMINIMAL_STACK_SIZE * 5, NULL, 5, NULL);
