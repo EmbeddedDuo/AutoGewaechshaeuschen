@@ -39,9 +39,9 @@ static const adc_unit_t unit = ADC_UNIT_1;
 #define SERVO_CH1_PIN 25
 
 // Queues for communication between tasks
-QueueHandle_t avgTempQueue;
-QueueHandle_t DhtDataQueue;
-QueueHandle_t DataHandlerQueue;
+QueueHandle_t LcdToServoQueue;
+QueueHandle_t DhtToLcdQueue;
+QueueHandle_t LcdToWebsiteQueue;
 
 // Task handles
 TaskHandle_t dht_task1 = NULL;
@@ -56,8 +56,6 @@ typedef struct DhtQueueMessage
     float temperature;
 };
 
-// Array to store DHT sensor data from different tasks
-struct DhtQueueMessage dhtMessages[3];
 
 // Threshold temperature value for servo control
 float thresholdTemperature = 25;
@@ -71,6 +69,9 @@ void lcd_task(void *pvParameters)
     
     hd44780_switch_backlight(&lcd, true);
 
+    // Array to store DHT sensor data from different tasks
+    struct DhtQueueMessage dhtMessages[3];
+
     // Structure to receive DHT sensor data
     struct DhtQueueMessage ReceiveMessage;
 
@@ -81,9 +82,9 @@ void lcd_task(void *pvParameters)
         float avgHumidity = 0.0;
 
         // Receive DHT sensor data from the queue
-        while (uxQueueSpacesAvailable(DhtDataQueue) != 3)
+        while (uxQueueSpacesAvailable(DhtToLcdQueue) != 3)
         {
-            if (xQueueReceive(DhtDataQueue, &ReceiveMessage, (TickType_t)5) == pdTRUE)
+            if (xQueueReceive(DhtToLcdQueue, &ReceiveMessage, (TickType_t)5) == pdTRUE)
             {
                 ESP_LOGI("DHT_to_LCD_Queue", "data successfully received from %s", ReceiveMessage.TaskName);
 
@@ -119,24 +120,24 @@ void lcd_task(void *pvParameters)
 
 
         // Send average temperature to the Servo through a queue
-        if (xQueueSend(avgTempQueue, (void *)&avgTemperature, (TickType_t)0) == pdTRUE)
+        if (xQueueSend(LcdToServoQueue, (void *)&avgTemperature, (TickType_t)0) == pdTRUE)
         {
-            ESP_LOGI("avgTempQueue", "Average temperature successfully sent");
+            ESP_LOGI("LcdToServoQueue", "Average temperature successfully sent");
         }
         else
         {
-            ESP_LOGI("avgTempQueue", "Average temperature couldnt be sent");
+            ESP_LOGI("LcdToServoQueue", "Average temperature couldnt be sent");
         }
 
-        // Send average temperature and humidity to DataHandlerQueue (to the Website function)
-        if (xQueueSend(DataHandlerQueue, (void *)&avgTemperature, (TickType_t)0) == pdTRUE &&
-            xQueueSend(DataHandlerQueue, (void *)&avgHumidity, (TickType_t)0) == pdTRUE)
+        // Send average temperature and humidity to LcdToWebsiteQueue (to the Website function)
+        if (xQueueSend(LcdToWebsiteQueue, (void *)&avgTemperature, (TickType_t)0) == pdTRUE &&
+            xQueueSend(LcdToWebsiteQueue, (void *)&avgHumidity, (TickType_t)0) == pdTRUE)
         {
-            ESP_LOGI("DataHandlerQueue", "Temperature and Humidity successfully sent to DataHandlerQueue");
+            ESP_LOGI("LcdToWebsiteQueue", "Temperature and Humidity successfully sent to LcdToWebsiteQueue");
         }
         else
         {
-            ESP_LOGI("DataHandlerQueue", "Temperature and Humidity couldnt be sent to DataHandlerQueue");
+            ESP_LOGI("LcdToWebsiteQueue", "Temperature and Humidity couldnt be sent to LcdToWebsiteQueue");
         }
 
         // Print temperature and humidity on LCD
@@ -170,8 +171,8 @@ void dht_task(void *pvParameters)
             sendMessage.temperature = temperature;
             sendMessage.TaskName = pcTaskGetName(xTaskGetCurrentTaskHandle());
 
-            // Send data to DhtDataQueue (to the LCD Task)
-            if (xQueueSend(DhtDataQueue, (void *)&sendMessage, (TickType_t)0) == pdTRUE)
+            // Send data to DhtToLcdQueue (to the LCD Task)
+            if (xQueueSend(DhtToLcdQueue, (void *)&sendMessage, (TickType_t)0) == pdTRUE)
             {
                 ESP_LOGI("DHT_to_LCD_Queue", "temperature successfully sent");
             }
@@ -267,10 +268,10 @@ void servo_task()
         // Initialize delay buffer
         TickType_t delayBuff = 0;
 
-        // Receive average temperature from avgTempQueue (From LCD Task)
-        if (xQueueReceive(avgTempQueue, &avgTemperature, (TickType_t)5) == pdTRUE)
+        // Receive average temperature from LcdToServoQueue (From LCD Task)
+        if (xQueueReceive(LcdToServoQueue, &avgTemperature, (TickType_t)5) == pdTRUE)
         {
-            ESP_LOGI("avgTempQueue", "Avg Temp received: %f", avgTemperature);
+            ESP_LOGI("LcdToServoQueue", "Avg Temp received: %f", avgTemperature);
 
             // Control servo based on average temperature
             if ((avgTemperature >= thresholdTemperature) && !isOpen)
@@ -430,11 +431,11 @@ esp_err_t get_data_handler(httpd_req_t *req)
     static float humidity = 0;
     float tempTemperature, tempHumidity;
 
-    // Receive data from DataHandlerQueue (from LCD Task)
-    if (xQueueReceive(DataHandlerQueue, &tempTemperature, (TickType_t)5) == pdTRUE &&
-        xQueueReceive(DataHandlerQueue, &tempHumidity, (TickType_t)5) == pdTRUE)
+    // Receive data from LcdToWebsiteQueue (from LCD Task)
+    if (xQueueReceive(LcdToWebsiteQueue, &tempTemperature, (TickType_t)5) == pdTRUE &&
+        xQueueReceive(LcdToWebsiteQueue, &tempHumidity, (TickType_t)5) == pdTRUE)
     {
-        ESP_LOGI("DataHandlerQueue", "Data successfully received in DataHandler");
+        ESP_LOGI("LcdToWebsiteQueue", "Data successfully received in DataHandler");
         temperature = tempTemperature;
         humidity = tempHumidity;
     }
@@ -547,28 +548,28 @@ void app_main()
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 
-    DhtDataQueue = xQueueCreate(3, sizeof(struct DhtQueueMessage));
+    DhtToLcdQueue = xQueueCreate(3, sizeof(struct DhtQueueMessage));
 
-    // Check if DhtDataQueue is created successfully
-    if (DhtDataQueue == NULL)
+    // Check if DhtToLcdQueue is created successfully
+    if (DhtToLcdQueue == NULL)
     {
         ESP_LOGE("DHT_to_LCD_Queue", "Queue couldn't be created");
     }
 
-    avgTempQueue = xQueueCreate(2, sizeof(float));
+    LcdToServoQueue = xQueueCreate(2, sizeof(float));
 
-    // Check if avgTempQueue is created successfully
-    if (avgTempQueue == NULL)
+    // Check if LcdToServoQueue is created successfully
+    if (LcdToServoQueue == NULL)
     {
-        ESP_LOGE("avgTempQueue", "Queue couldn't be created");
+        ESP_LOGE("LcdToServoQueue", "Queue couldn't be created");
     }
 
-    DataHandlerQueue = xQueueCreate(2, sizeof(float));
+    LcdToWebsiteQueue = xQueueCreate(2, sizeof(float));
 
-    // Check if DataHandlerQueue is created successfully
-    if (DataHandlerQueue == NULL)
+    // Check if LcdToWebsiteQueue is created successfully
+    if (LcdToWebsiteQueue == NULL)
     {
-        ESP_LOGE("DataHandlerQueue", "Queue couldn't be created");
+        ESP_LOGE("LcdToWebsiteQueue", "Queue couldn't be created");
     }
 
     ESP_ERROR_CHECK(i2cdev_init());
