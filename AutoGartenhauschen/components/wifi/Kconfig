@@ -1,9 +1,9 @@
 menu "Wifi configuration"
     config EXAMPLE_WIFI_SSID
         string "SSID of Network"
-        default "FRITZ!Box 7490"
+        default "Mi Phone"
 
     config EXAMPLE_WIFI_PASSWORD
         string "Password of Network"
-        default ""
+        default "32001bf0cb35"
 endmenu

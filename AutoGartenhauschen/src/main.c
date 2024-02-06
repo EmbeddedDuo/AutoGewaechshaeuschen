@@ -51,17 +51,15 @@ typedef struct DhtQueueMessage
     float temperature;
 };
 
-
 // Threshold temperature value for servo control
 float thresholdTemperature = 25;
-
 
 // LCD task function
 void lcd_task(void *pvParameters)
 {
     // Initialize LCD
     hd44780_t lcd = initializeHD44780();
-    
+
     hd44780_switch_backlight(&lcd, true);
 
     // Array to store DHT sensor data from different tasks
@@ -113,7 +111,6 @@ void lcd_task(void *pvParameters)
         avgHumidity /= 3;
         avgTemperature /= 3;
 
-
         // Send average temperature to the Servo through a queue
         if (xQueueSend(LcdToServoQueue, (void *)&avgTemperature, (TickType_t)0) == pdTRUE)
         {
@@ -121,7 +118,7 @@ void lcd_task(void *pvParameters)
         }
         else
         {
-            ESP_LOGI("LcdToServoQueue", "Average temperature couldnt be sent");
+            ESP_LOGW("LcdToServoQueue", "Average temperature couldnt be sent");
         }
 
         // Send average temperature and humidity to LcdToWebsiteQueue (to the Website function)
@@ -132,7 +129,7 @@ void lcd_task(void *pvParameters)
         }
         else
         {
-            ESP_LOGI("LcdToWebsiteQueue", "Temperature and Humidity couldnt be sent to LcdToWebsiteQueue");
+            ESP_LOGW("LcdToWebsiteQueue", "Temperature and Humidity couldnt be sent to LcdToWebsiteQueue");
         }
 
         // Print temperature and humidity on LCD
@@ -178,7 +175,7 @@ void dht_task(void *pvParameters)
         }
         else
         {
-           ESP_LOGW("DHT","Could not read data from sensor");
+            ESP_LOGW("DHT", "Could not read data from sensor");
         }
 
         // Delay for 2 seconds
@@ -187,7 +184,7 @@ void dht_task(void *pvParameters)
 }
 
 // Function to test photoresistor
-void photoresistor_test()
+void photoresistor_task()
 {
     uint32_t reading;
     uint32_t voltage;
@@ -204,7 +201,6 @@ void photoresistor_test()
     esp_adc_cal_characteristics_t *adc_chars = calloc(1, sizeof(esp_adc_cal_characteristics_t));
     esp_adc_cal_value_t val_type = esp_adc_cal_characterize(unit, ADC_ATTEN_DB_11, ADC_WIDTH_BIT_12, DEFAULT_VREF, adc_chars);
 
-
     while (true)
     {
 
@@ -216,7 +212,7 @@ void photoresistor_test()
 
         // Control LED based on voltage
         if ((voltage >= 2500) && (gpio_get_level(LED_GPIO) == 0))
-        {   
+        {
             ESP_LOGI("LED", "LED turned on");
             gpio_set_level(LED_GPIO, 1);
             delayBuffer = 3000;
@@ -300,7 +296,7 @@ void servo_task()
     }
 }
 
-// Handler for the root URI 
+// Handler for the root URI
 esp_err_t get_root_handler(httpd_req_t *req)
 {
     // HTML content for the root page
@@ -419,7 +415,7 @@ esp_err_t get_root_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
-// Handler for data URI 
+// Handler for data URI
 esp_err_t get_data_handler(httpd_req_t *req)
 {
     static float temperature = 0;
@@ -534,6 +530,16 @@ httpd_handle_t start_webserver(void)
 
 void app_main()
 {
+    esp_err_t ret = nvs_flash_init(); // Initialize NVS Flash memory for the WIFI credentials
+
+    // Check for NVS initialization errors
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND)
+    {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(ret); // Check for general initialization errors
+
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 
     init_wifi(); // Initialize Wi-Fi
@@ -574,7 +580,7 @@ void app_main()
     xTaskCreate(lcd_task, "lcd_task", configMINIMAL_STACK_SIZE * 5, NULL, 5, NULL);
 
     // Create photoresistor task
-    xTaskCreate(photoresistor_test, "photoresistor_test", configMINIMAL_STACK_SIZE * 5, NULL, 5, NULL);
+    xTaskCreate(photoresistor_task, "photoresistor_task", configMINIMAL_STACK_SIZE * 5, NULL, 5, NULL);
 
     // Create DHT sensor tasks
     xTaskCreate(dht_task, "dht_task1", configMINIMAL_STACK_SIZE * 3, &dht_gpio_1, 5, NULL);
@@ -583,7 +589,6 @@ void app_main()
 
     // Create servo task
     xTaskCreate(servo_task, "servo_task", configMINIMAL_STACK_SIZE * 5, NULL, 5, NULL);
-
-    start_webserver();
     
+    start_webserver();
 }
